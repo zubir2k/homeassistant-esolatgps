@@ -1,7 +1,7 @@
 ![esolatgps_banner](https://user-images.githubusercontent.com/1905339/223016758-1c0c8058-7375-43d9-bd65-9fc00f48809c.png)\
 [![hacs_badge](https://img.shields.io/badge/HACS-Integration-41BDF5.svg)](https://github.com/hacs/integration)
 [![Donate](https://img.shields.io/badge/Donate-Coffee-yellow.svg)](https://zubirco.de/buymecoffee)
-<!-- ![GitHub manifest version (path)](https://img.shields.io/github/manifest-json/v/zubir2k/homeassistant-esolatgps?filename=custom_components%2Fesolatgps%2Fmanifest.json) -->
+![GitHub manifest version (path)](https://img.shields.io/github/manifest-json/v/zubir2k/homeassistant-esolatgps?filename=custom_components%2Fesolatgps%2Fmanifest.json)
 
 Assalamu'alaikum
 
@@ -47,3 +47,8 @@ This is a continuation of [HomeAssistantEsolatGPS](https://github.com/zubir2k/Ho
 The sensors will be populated `sensor.esolat_` based on the person with GPS coordinates.
 
 ![image](https://user-images.githubusercontent.com/1905339/223009818-6e8b483e-a86d-48f7-8f3d-b6fd2035bdae.png)
+
+## Special Thanks 🎉
+- [HomeAssistantMalaysia](https://www.facebook.com/groups/homeassistantmalaysia)
+- Saudara [Noorzaini Ilhami](https://github.com/i906) for his [MPT API](https://github.com/MalaysiaPrayerTimes)
+- Prayer times data by [JAKIM](https://www.e-solat.gov.my/). Geolocation data by [Google](https://www.google.com.my)
