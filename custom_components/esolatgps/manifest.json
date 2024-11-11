@@ -1,12 +1,12 @@
 {
   "domain": "esolatgps",
   "name": "eSolat GPS",
+  "codeowners": ["@zubir2k"],  
   "config_flow": true,
-  "codeowners": ["@zubir2k"],
   "dependencies": ["zone", "person"],
   "documentation": "https://github.com/zubir2k/homeassistant-esolatgps",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/zubir2k/homeassistant-esolatgps/issues",
   "requirements": ["pytz"],
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
