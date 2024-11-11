@@ -1,6 +1,6 @@
 ![esolatgps_banner](https://user-images.githubusercontent.com/1905339/223016758-1c0c8058-7375-43d9-bd65-9fc00f48809c.png)\
 [![hacs_badge](https://img.shields.io/badge/HACS-Integration-41BDF5.svg)](https://github.com/hacs/integration)
-[![Donate](https://img.shields.io/badge/Donate-Coffee-yellow.svg)](https://zubirco.de/buymecoffee)
+[![Buy](https://img.shields.io/badge/Belanja-Coffee-yellow.svg)](https://zubirco.de/buymecoffee)
 ![GitHub manifest version (path)](https://img.shields.io/github/manifest-json/v/zubir2k/homeassistant-esolatgps?filename=custom_components%2Fesolatgps%2Fmanifest.json)
 
 Assalamu'alaikum
