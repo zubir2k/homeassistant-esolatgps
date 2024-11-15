@@ -21,13 +21,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator = EsolatGPSCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
 
-    async_add_entities(
-        EsolatGPSSensor(coordinator, person_entity)
-        for person_entity in hass.states.async_entity_ids("person")
-        if hass.states.get(person_entity).attributes.get("latitude") is not None
-        and hass.states.get(person_entity).attributes.get("longitude") is not None
-    )
-    async_add_entities([EsolatGPSSensor(coordinator, "zone.home", is_home=True)])
+    sensors = []
+    for person_entity in hass.states.async_entity_ids("person"):
+        if (hass.states.get(person_entity).attributes.get("latitude") is not None
+            and hass.states.get(person_entity).attributes.get("longitude") is not None):
+            sensors.append(EsolatGPSSensor(coordinator, person_entity))
+
+    sensors.append(EsolatGPSSensor(coordinator, "zone.home", is_home=True))
+    sensors.append(EsolatNowSensor(coordinator, hass))
+
+    async_add_entities(sensors)
 
 class EsolatGPSCoordinator(DataUpdateCoordinator):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry):
@@ -198,3 +201,129 @@ class EsolatGPSSensor(CoordinatorEntity, SensorEntity):
         attributes["source"] = self._entity_id
         return attributes
 
+class EsolatNowSensor(CoordinatorEntity, SensorEntity):
+    """Representation of an eSolatNow Sensor that shows current prayer times."""
+
+    def __init__(self, coordinator, hass):
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self.hass = hass
+        self._attr_unique_id = "esolatnow"
+        self.entity_id = "sensor.esolatnow"
+        self._attr_icon = "mdi:calendar-clock"
+        self._hijri_date = None
+        self._last_hijri_update = None
+
+    async def async_get_hijri_date(self):
+        """Get Hijri date from API."""
+        # Update only once per day
+        now = datetime.now()
+        if self._last_hijri_update and self._last_hijri_update.date() == now.date() and self._hijri_date:
+            return self._hijri_date
+
+        url = "https://www.e-solat.gov.my/index.php"
+        params = {
+            "r": "esolatApi/tarikhtakwim",
+            "period": "today",
+            "datetype": "miladi"
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        hijri_date = next(iter(data["takwim"].values()))
+                        parts = hijri_date.split('-')
+                        day = parts[2]
+                        month_number = int(parts[1]) - 1
+                        year = parts[0]
+
+                        months = [
+                            "Muharram", "Safar", "Rabi'ul Awwal", "Rabi'ul Akhir",
+                            "Jamadil Awwal", "Jamadil Akhir", "Rejab", "Sha'aban",
+                            "Ramadhan", "Syawal", "Zulkaedah", "Zulhijjah"
+                        ]
+
+                        self._hijri_date = f"{day} {months[month_number]} {year}"
+                        self._last_hijri_update = now
+                        return self._hijri_date
+                    else:
+                        _LOGGER.error(f"Failed to fetch Hijri date: HTTP {response.status}")
+                        return "unavailable"
+        except Exception as e:
+            _LOGGER.error(f"Error fetching Hijri date: {e}")
+            return "unavailable"
+
+    def get_current_prayer_info(self, entity_data):
+        """Get current prayer information based on time."""
+        now = datetime.now(ZoneInfo("UTC"))
+        prayer_times = {
+            "imsak": ("Imsak", "Subuh"),
+            "subuh": ("Subuh", "Syuruk"),
+            "syuruk": ("Syuruk", "Isyraq"),
+            "isyraq": ("Isyraq", "Dhuha"),
+            "dhuha": ("Dhuha", "Zohor"),
+            "zohor": ("Zohor", "Asar"),
+            "asar": ("Asar", "Maghrib"),
+            "maghrib": ("Maghrib", "Isyak"),
+            "isyak": ("Isyak", "Imsak")
+        }
+
+        attributes = entity_data.get("attributes", {})
+        for current_prayer, (current_name, next_name) in prayer_times.items():
+            current_time = datetime.fromisoformat(attributes.get(current_prayer, ""))
+            next_prayer = next_name.lower()
+            
+            # Handle Isyak to Imsak transition
+            if next_prayer == "imsak":
+                next_time = datetime.fromisoformat(attributes.get(next_prayer, "")) + timedelta(days=1)
+            else:
+                next_time = datetime.fromisoformat(attributes.get(next_prayer, ""))
+
+            if current_time <= now < next_time:
+                return {
+                    "current": current_name,
+                    "next": next_name,
+                    "datetime": attributes.get(current_prayer),
+                    "location": entity_data.get("state")
+                }
+
+        return None
+
+    @property
+    def name(self):
+        """Return the name of the sensor."""
+        return "Current Prayer Time"
+
+    @property
+    def state(self):
+        """Return the number of prayer time sensors."""
+        return len([entity_id for entity_id in self.hass.states.async_entity_ids("sensor") 
+                   if entity_id.startswith("sensor.esolat_")])
+
+    async def async_update(self):
+        """Update the sensor."""
+        await super().async_update()
+        # Ensure the Hijri date is updated daily
+        await self.async_get_hijri_date()
+
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes."""
+        attributes = {
+            "hijri": self._hijri_date or "unavailable",
+            "array": {}
+        }
+
+        # Update Hijri date when accessing attributes
+        self.hass.async_create_task(self.async_get_hijri_date())
+
+        for entity_id, entity_data in self.coordinator.data.items():
+            if entity_data.get("state") != "Outside Malaysia":
+                prayer_info = self.get_current_prayer_info(entity_data)
+                if prayer_info:
+                    entity_name = entity_id.split('.')[1]
+                    attributes["array"][entity_name] = prayer_info
+
+        return attributes
