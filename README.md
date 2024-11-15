@@ -1,7 +1,7 @@
 ![esolatgps_banner](https://user-images.githubusercontent.com/1905339/223016758-1c0c8058-7375-43d9-bd65-9fc00f48809c.png)\
 [![hacs_badge](https://img.shields.io/badge/HACS-Integration-41BDF5.svg)](https://github.com/hacs/integration)
+![GitHub all releases](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=Download%20Count&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.esolatgps.total)
 [![Buy](https://img.shields.io/badge/Belanja-Coffee-yellow.svg)](https://zubirco.de/buymecoffee)
-![GitHub all releases](https://img.shields.io/github/downloads/zubir2k/homeassistant-esolatgps/total.svg)
 ![GitHub manifest version (path)](https://img.shields.io/github/manifest-json/v/zubir2k/homeassistant-esolatgps?filename=custom_components%2Fesolatgps%2Fmanifest.json)
 
 Assalamu'alaikum
@@ -15,6 +15,10 @@ Prayer time information are made as sensor attributes with the following format:
 - Datetime UTC (e.g. 2023-07-29T22:01:00+00:00)
 
 This is a continuation of [HomeAssistantEsolatGPS](https://github.com/zubir2k/HomeAssistantEsolatGPS) (Appdaemon version)
+
+## Whats New?
+- Added Current Prayer Time (sensor.esolatnow)
+- Dynamic Prayer Time dashboard using Markdown card
 
 ## Requirements
 - Home Assistant 2021.x and above
@@ -48,6 +52,15 @@ This is a continuation of [HomeAssistantEsolatGPS](https://github.com/zubir2k/Ho
 The sensors will be populated `sensor.esolat_` based on the person with GPS coordinates.
 
 ![image](https://user-images.githubusercontent.com/1905339/223009818-6e8b483e-a86d-48f7-8f3d-b6fd2035bdae.png)
+
+## Dynamic Prayer Time - Markdown Card
+I have prepared a markdown card template that will:
+- Automatically show Prayer time based on the logged in user
+- If user state is at `home` the prayer time will automatically switched to Home prayer time
+
+You may refer to the [Markdown.md](MARKDOWN.md) and copy the markdown codes.
+
+![image](https://github.com/zubir2k/HomeAssistantEsolatGPS/assets/1905339/3e894bd2-7982-44b9-adbd-024e12a4c3c8)
 
 ## Special Thanks 🎉
 - [HomeAssistantMalaysia](https://www.facebook.com/groups/homeassistantmalaysia)
