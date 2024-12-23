@@ -3,7 +3,7 @@
 ![image](https://github.com/zubir2k/HomeAssistantEsolatGPS/assets/1905339/3e894bd2-7982-44b9-adbd-024e12a4c3c8)
 
 1. Edit your current dashboard.
-2. Add a new Markdown card. ![What is Markdown card?](https://www.home-assistant.io/dashboards/markdown)
+2. Add a new Markdown card. [What is Markdown card?](https://www.home-assistant.io/dashboards/markdown)
 3. Copy below markdown.
 4. Save
 
