@@ -63,7 +63,7 @@
 <td>{{ state_attr(esolat_sensor, 'maghrib_12h') }}</td>
 <td>{{ state_attr(esolat_sensor, 'isyak_12h') }}</td>
 </tr>
-<tr><ha-alert alert-type="info"><b>Location: </b>{{ userid }}</ha-alert></tr>
+<tr><ha-alert alert-type="info"><b>Location: </b>{{ states(esolat_sensor) }}</ha-alert></tr>
 {% endif %}
 {% endfor %}
 </table>
