@@ -97,35 +97,55 @@ class EsolatNowSensor(CoordinatorEntity, SensorEntity):
         """Get current prayer information based on time."""
         now = datetime.now(ZoneInfo("UTC"))
         prayer_times = {
-            "imsak": ("Imsak", "Subuh"),
-            "subuh": ("Subuh", "Syuruk"),
-            "syuruk": ("Syuruk", "Isyraq"),
-            "isyraq": ("Isyraq", "Dhuha"),
-            "dhuha": ("Dhuha", "Zohor"),
-            "zohor": ("Zohor", "Asar"),
-            "asar": ("Asar", "Maghrib"),
+            "imsak":   ("Imsak",   "Subuh"),
+            "subuh":   ("Subuh",   "Syuruk"),
+            "syuruk":  ("Syuruk",  "Isyraq"),
+            "isyraq":  ("Isyraq",  "Dhuha"),
+            "dhuha":   ("Dhuha",   "Zohor"),
+            "zohor":   ("Zohor",   "Asar"),
+            "asar":    ("Asar",    "Maghrib"),
             "maghrib": ("Maghrib", "Isyak"),
-            "isyak": ("Isyak", "Imsak")
+            "isyak":   ("Isyak",   "Imsak"),
         }
 
         attributes = entity_data.get("attributes", {})
+        isyak_time = None
+        imsak_time = None
+
         for current_prayer, (current_name, next_name) in prayer_times.items():
-            current_time = datetime.fromisoformat(attributes.get(current_prayer, ""))
-            next_prayer = next_name.lower()
-            
-            # Handle Isyak to Imsak transition
-            if next_prayer == "imsak":
-                next_time = datetime.fromisoformat(attributes.get(next_prayer, "")) + timedelta(days=1)
+            current_time_str = attributes.get(current_prayer, "")
+            next_prayer_key = next_name.lower()
+
+            if not current_time_str or not attributes.get(next_prayer_key, ""):
+                continue
+
+            current_time = datetime.fromisoformat(current_time_str)
+
+            # Handle Isyak to Imsak transition (crosses midnight)
+            if next_prayer_key == "imsak":
+                imsak_time = datetime.fromisoformat(attributes.get(next_prayer_key, ""))
+                next_time = imsak_time + timedelta(days=1)
+                isyak_time = current_time
             else:
-                next_time = datetime.fromisoformat(attributes.get(next_prayer, ""))
+                next_time = datetime.fromisoformat(attributes.get(next_prayer_key, ""))
 
             if current_time <= now < next_time:
                 return {
                     "current": current_name,
                     "next": next_name,
                     "datetime": attributes.get(current_prayer),
-                    "location": entity_data.get("state")
+                    "location": entity_data.get("state"),
                 }
+
+        # Fallback: after midnight but before today's Imsak
+        # (now has passed all stored prayer times but Imsak hasn't arrived yet)
+        if imsak_time is not None and isyak_time is not None and now < imsak_time:
+            return {
+                "current": "Isyak",
+                "next": "Imsak",
+                "datetime": attributes.get("isyak"),
+                "location": entity_data.get("state"),
+            }
 
         return None
 
