@@ -9,6 +9,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers import entity_registry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, CoordinatorEntity
 from .const import DOMAIN
 from .coordinator import EsolatGPSCoordinator
@@ -135,6 +137,7 @@ class EsolatNowSensor(CoordinatorEntity, SensorEntity):
                     "next": next_name,
                     "datetime": attributes.get(current_prayer),
                     "location": entity_data.get("state"),
+                    **self._countdown(next_time, now),
                 }
 
         # Fallback: after midnight but before today's Imsak
@@ -145,9 +148,38 @@ class EsolatNowSensor(CoordinatorEntity, SensorEntity):
                 "next": "Imsak",
                 "datetime": attributes.get("isyak"),
                 "location": entity_data.get("state"),
+                **self._countdown(imsak_time, now),
             }
 
         return None
+
+    @staticmethod
+    def _countdown(next_time, now):
+        """Countdown attributes to the next prayer."""
+        total_seconds = max(int((next_time - now).total_seconds()), 0)
+        minutes = total_seconds // 60
+        hours, mins = divmod(minutes, 60)
+        parts = []
+        if hours:
+            parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+        parts.append(f"{mins} minute{'s' if mins != 1 else ''}")
+        return {
+            "next_datetime": next_time.isoformat(),
+            "time_minutes": minutes,
+            "time_remaining": ", ".join(parts),
+        }
+
+    async def async_added_to_hass(self):
+        """Re-render every minute so the countdown stays current between API polls."""
+        await super().async_added_to_hass()
+
+        @callback
+        def _tick(_now):
+            self.async_write_ha_state()
+
+        self.async_on_remove(
+            async_track_time_interval(self.hass, _tick, timedelta(minutes=1))
+        )
 
     @property
     def name(self):
@@ -184,3 +216,4 @@ class EsolatNowSensor(CoordinatorEntity, SensorEntity):
                     attributes["array"][entity_name] = prayer_info
 
         return attributes
+
