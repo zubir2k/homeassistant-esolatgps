@@ -209,7 +209,7 @@ class EsolatNowSensor(CoordinatorEntity, SensorEntity):
         self.hass.async_create_task(self.async_get_hijri_date())
 
         for entity_id, entity_data in self.coordinator.data.items():
-            if entity_data.get("state") != "Outside Malaysia":
+            if entity_data.get("attributes", {}).get("subuh"):
                 prayer_info = self.get_current_prayer_info(entity_data)
                 if prayer_info:
                     entity_name = entity_id.split('.')[1]
