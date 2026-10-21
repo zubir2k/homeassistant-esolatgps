@@ -9,23 +9,28 @@
 
 Assalamu'alaikum
 
-This is a custom integration for Home Assistant that will create a Prayer Time sensor based on Person's GPS coordinates.
-The GPS-based prayer time API is provided by **[Malaysia Prayer Time](https://mpt.i906.my/)**.
+This is a custom integration for Home Assistant that creates a Prayer Time sensor for each Person based on their GPS coordinates, plus one for your Home zone.
 
-Prayer time information are made as sensor attributes with the following format:
-- 12 hours (e.g. 6:01 AM)
-- 24 hours (e.g. 06:01:00)
-- Datetime UTC (e.g. 2023-07-29T22:01:00+00:00)
+- **In Malaysia:** official JAKIM times via **[Malaysia Prayer Time](https://mpt.i906.my/)**
+- **Outside Malaysia:** times from **[Aladhan](https://aladhan.com/prayer-times-api)**, using the nearest local authority (e.g. MUIS in Singapore, Umm Al-Qura in Makkah)
+
+It also ships with the **eSolat GPS Card**, a dashboard card that's installed automatically with the integration.
 
 This is a continuation of [HomeAssistantEsolatGPS](https://github.com/zubir2k/HomeAssistantEsolatGPS) (Appdaemon version)
 
-## Whats New?
-- Added Current Prayer Time (sensor.esolatnow)
-- Dynamic Prayer Time dashboard using Markdown card
+## What's New
+- 🕌 **eSolat GPS Card** bundled with the integration: no dashboard resource to add
+- 🌍 Prayer times **outside Malaysia** via Aladhan
+- 📍 Sensor state is now the **reverse-geocoded place** (e.g. `Kampung Sungai Jernih, Hulu Langat`)
+- 🏷️ New attributes: `flag`, `zone`, `region`, `country`, `provider`, `timezone`
+- 🐛 Fixed reverse geolocation for places without a state (e.g. Singapore), which left the sensor unavailable
+
+> [!WARNING]
+> **Breaking change:** the sensor state no longer shows the JAKIM zone name (e.g. `Kajang`). If your automations or templates use the old state, switch them to the `zone` attribute.
 
 ## Requirements
-- Home Assistant 2021.x and above
-- Person entity with GPS location (device tracker)
+- Home Assistant 2024.1 or newer (2024.7+ recommended)
+- Person entity with GPS location (device tracker, e.g. the Companion app)
 
 ## Installation
 #### With HACS
@@ -52,20 +57,77 @@ This is a continuation of [HomeAssistantEsolatGPS](https://github.com/zubir2k/Ho
 > 3. Search for `eSolat GPS`
 > 4. Adjust the interval to your preference. Default is set to 15 minutes.
 
-The sensors will be populated `sensor.esolat_` based on the person with GPS coordinates.
+## Sensors
 
-![image](https://user-images.githubusercontent.com/1905339/223009818-6e8b483e-a86d-48f7-8f3d-b6fd2035bdae.png)
+| Entity | Description |
+|---|---|
+| `sensor.esolat_home` | Prayer times for your Home zone |
+| `sensor.esolat_<person>` | Prayer times for each Person with GPS coordinates |
+| `sensor.esolatnow` | Current and next prayer for every sensor above, plus today's Hijri date |
 
-## Dynamic Prayer Time - Markdown Card
-I have prepared a markdown card template that will:
-- Automatically show Prayer time based on the logged in user
-- If user state is at `home` the prayer time will automatically switched to Home prayer time
+> [!NOTE]
+> Person sensors are created when the integration loads. If someone gets a GPS tracker later, reload the integration to create their sensor.
 
-You may refer to the [Markdown.md](MARKDOWN.md) and copy the markdown codes.
+### Prayer time sensor
 
-![image](https://github.com/zubir2k/HomeAssistantEsolatGPS/assets/1905339/3e894bd2-7982-44b9-adbd-024e12a4c3c8)
+**State:** the reverse-geocoded place, e.g. `Kampung Sungai Jernih, Hulu Langat` or `Bishan, Singapore, SG`.
+
+| Attribute | Example | Notes |
+|---|---|---|
+| `flag` | `local` / `outside_malaysia` | Where the times come from |
+| `zone` | `Kajang` | JAKIM zone place (Malaysia only) |
+| `region` | `Selangor` | State or region |
+| `country` | `Malaysia` | |
+| `provider` | `JAKIM (MPT)` / `Aladhan` | |
+| `method` | `Majlis Ugama Islam Singapura, Singapore` | Calculation authority (outside Malaysia only) |
+| `timezone` | `Asia/Kuala_Lumpur` | Local timezone of the location |
+| `gps` | `2.99,101.78` | |
+
+Prayer times: `imsak`, `subuh`, `syuruk`, `isyraq`, `dhuha`, `zohor`, `asar`, `maghrib`, `isyak`, each in three formats:
+- Datetime UTC (e.g. `2026-10-21T21:49:00+00:00`)
+- 12 hours with `_12h` (e.g. `5:49 AM`), in the location's local time
+- 24 hours with `_24h` (e.g. `05:49:00`), in the location's local time
+
+## eSolat GPS Card
+
+The card is loaded automatically once the integration is installed. Edit your dashboard, click **Add card**, and search for **eSolat GPS Card**.
+
+<!-- Add a screenshot here, e.g. ![eSolat GPS Card](images/card.png) -->
+
+- Live countdown ring to the next prayer, live clock, Gregorian and Hijri date, moon phase
+- Follows the logged-in user's location, and switches to Home times when they're at home
+- Full and compact layouts, adapts to phones, tablets and wall displays
+- Themes: Sky (changes with the prayer period), Emerald, Midnight, Turquoise, Sable, Slate, or your Home Assistant theme
+- Bahasa Melayu or English, 12h or 24h, Zohor shows as Jumaat on Fridays
+- Visual editor, no YAML needed
+
+```yaml
+type: custom:esolatgps-card
+entity: auto              # or sensor.esolat_home / sensor.esolat_<person>
+theme: sky                # sky | emerald | midnight | turquoise | sable | slate | ha
+language: ms              # ms | en
+layout: auto              # auto | full | compact
+hour12: true
+show_clock: true
+show_imsak: true
+show_syuruk: true
+show_isyraq_dhuha: false
+show_moon: true
+show_location: true
+home_when_home: true      # auto mode: use Home times while the user is home
+seconds_threshold: 60     # show MM:SS when the next prayer is this many minutes away
+tap_action: more-info     # more-info | none
+# title: Waktu Solat
+# height: 420px
+```
+
+> [!Tip]
+> For `entity: auto` to follow each user, link every Person to their Home Assistant user (Settings --> People). Users without a GPS tracker see Home times.
+
+![esolatgps](https://github.com/user-attachments/assets/c61d89b5-65e7-4fe5-9ad2-c24c6b220bd4)
 
 ## Special Thanks 🎉
 - [HomeAssistantMalaysia](https://www.facebook.com/groups/homeassistantmalaysia)
 - Saudara [Noorzaini Ilhami](https://github.com/i906) for his [MPT API](https://github.com/MalaysiaPrayerTimes)
-- Prayer times data by [JAKIM](https://www.e-solat.gov.my/). Geolocation data by [Google](https://www.google.com.my)
+- Prayer times data by [JAKIM](https://www.e-solat.gov.my/) and [Aladhan](https://aladhan.com/)
+- Geolocation data by [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors via Nominatim
