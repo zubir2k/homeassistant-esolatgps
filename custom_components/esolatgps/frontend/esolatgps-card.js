@@ -9,7 +9,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "0.2.1";
+const CARD_VERSION = "0.2.3";
 const TZ = "Asia/Kuala_Lumpur";
 
 const PRAYERS = [
@@ -64,11 +64,11 @@ const SKY = {
   isyak: ["#0b1026", "#1b2350", "#2c2f6b"],
   imsak: ["#0d1330", "#23295e", "#3d3a78"],
   subuh: ["#1d2b5a", "#5b4b8a", "#d98aa0"],
-  syuruk: ["#3a6ea5", "#f2a65a", "#ffd59e"],
-  isyraq: ["#3d7cc9", "#7fb3e6", "#ffe3a8"],
-  dhuha: ["#2f80d1", "#6fb1ec", "#bfe0ff"],
-  zohor: ["#1f78d1", "#4aa3f0", "#a9d8ff"],
-  asar: ["#2a6fb5", "#e0a458", "#f6d28b"],
+  syuruk: ["#2f5f94", "#d98a45", "#c9733a"],
+  isyraq: ["#2f6db5", "#4f8fcf", "#c98a45"],
+  dhuha: ["#1f6cb8", "#3f8ad3", "#5d9fdc"],
+  zohor: ["#1a66b8", "#3489d6", "#5a9fe0"],
+  asar: ["#255f9e", "#c98543", "#b8702f"],
   maghrib: ["#2b1d4f", "#b0436b", "#f28c4b"],
 };
 
@@ -246,16 +246,16 @@ class EsolatGpsCard extends HTMLElement {
       entity: "auto",
       theme: "sky",
       language: "ms",
-      layout: "auto",
+      layout: "compact",
       hour12: true,
       show_clock: true,
-      show_imsak: true,
-      show_syuruk: true,
+      show_imsak: false,
+      show_syuruk: false,
       show_isyraq_dhuha: false,
       show_moon: true,
       show_location: true,
       home_when_home: true,
-      seconds_threshold: 60,
+      seconds_threshold: 5,
       tap_action: "more-info",
       ...config,
     };
@@ -362,9 +362,10 @@ class EsolatGpsCard extends HTMLElement {
       const g = SKY[currentKey] || SKY.zohor;
       const day = ["syuruk", "isyraq", "dhuha", "zohor", "asar"].includes(currentKey);
       return `--esg-bg: linear-gradient(170deg, ${g[0]} 0%, ${g[1]} 55%, ${g[2]} 100%);
-        --esg-text: #ffffff; --esg-muted: rgba(255,255,255,.72);
+        --esg-text: #ffffff; --esg-muted: rgba(255,255,255,${day ? ".88" : ".72"});
         --esg-accent: ${day ? "#fff3c4" : "#ffd27a"};
-        --esg-row: rgba(255,255,255,${day ? ".16" : ".08"}); --esg-row-active: rgba(255,255,255,${day ? ".32" : ".2"});`;
+        --esg-shadow: ${day ? "0 1px 3px rgba(0,0,0,.35)" : "none"};
+        --esg-row: ${day ? "rgba(0,0,0,.14)" : "rgba(255,255,255,.08)"}; --esg-row-active: rgba(255,255,255,${day ? ".26" : ".2"});`;
     }
     const p = PALETTES[theme] || PALETTES.emerald;
     return `--esg-bg: ${p.bg}; --esg-text: ${p.text}; --esg-muted: ${p.muted};
@@ -541,7 +542,7 @@ class EsolatGpsCard extends HTMLElement {
       :host { display:block; }
       ha-card {
         position:relative; overflow:hidden; cursor:pointer;
-        color:var(--esg-text); border:none;
+        color:var(--esg-text); border:none; text-shadow:var(--esg-shadow, none);
         container-type:inline-size;
         min-height:100%;
       }
@@ -569,7 +570,7 @@ class EsolatGpsCard extends HTMLElement {
       .ntime { font-size:.85rem; color:var(--esg-muted); }
 
       .side { display:flex; flex-direction:column; gap:8px; min-width:0; }
-      .clock { font-size:3.6rem; font-weight:300; line-height:1; font-variant-numeric:tabular-nums; letter-spacing:-1px; }
+      .clock { font-size:4.0rem; font-weight:300; line-height:1; font-variant-numeric:tabular-nums; letter-spacing:-1px; }
       .clock .sec { font-size:1.3rem; margin-left:4px; color:var(--esg-muted); letter-spacing:0; }
       .clock .ap { font-size:1.2rem; margin-left:6px; font-weight:500; letter-spacing:0; }
       .dates { font-size:.88rem; line-height:1.4; }
@@ -617,12 +618,37 @@ class EsolatGpsCard extends HTMLElement {
         .layout-auto .row, .layout-full .row { padding:12px 16px; font-size:1.1rem; }
       }
       @container (max-width: 380px) {
-        .hero { flex-direction:column; align-items:stretch; text-align:center; gap:12px; }
-        .ring-wrap { margin:0 auto; }
-        .side { align-items:center; }
-        .current-pill { align-self:center; }
-        .layout-compact .list { flex-wrap:wrap; }
-        .layout-compact .row { flex:1 0 30%; }
+        .layout-auto .hero, .layout-full .hero { flex-direction:column; align-items:stretch; text-align:center; gap:12px; }
+        .layout-auto .ring-wrap, .layout-full .ring-wrap { margin:0 auto; }
+        .layout-auto .side, .layout-full .side { align-items:center; }
+        .layout-auto .current-pill, .layout-full .current-pill { align-self:center; }
+      }
+      /* Compact keeps its desktop shape on phones: ring beside clock, one strip of prayers */
+      @container (max-width: 460px) {
+        .layout-compact .content { padding:14px 12px 12px; gap:12px; }
+        .layout-compact .hero { gap:12px; }
+        .layout-compact .ring-wrap { width:100px; height:100px; }
+        .layout-compact .moon { inset:16px; width:calc(100% - 32px); height:calc(100% - 32px); }
+        .layout-compact .cd { font-size:1.15rem; }
+        .layout-compact .nname { font-size:.8rem; }
+        .layout-compact .ntime { font-size:.7rem; }
+        .layout-compact .lbl { font-size:.55rem; }
+        .layout-compact .clock { font-size:2.3rem; }
+        .layout-compact .clock .sec { font-size:.95rem; }
+        .layout-compact .clock .ap { font-size:.9rem; margin-left:4px; }
+        .layout-compact .dates { font-size:.74rem; }
+        .layout-compact .current-pill { font-size:.7rem; padding:4px 9px; }
+        .layout-compact .side { gap:6px; }
+        .layout-compact .list { gap:3px; }
+        .layout-compact .row, .layout-compact .row.minor { padding:7px 1px; font-size:.66rem; border-radius:9px; min-width:0; }
+        .layout-compact .row ha-icon { --mdc-icon-size:16px; }
+        .layout-compact .row .name, .layout-compact .row .time { white-space:nowrap; overflow:hidden; text-overflow:clip; max-width:100%; letter-spacing:-.2px; }
+      }
+      @container (max-width: 340px) {
+        .layout-compact .ring-wrap { width:86px; height:86px; }
+        .layout-compact .cd { font-size:1rem; }
+        .layout-compact .clock { font-size:1.95rem; }
+        .layout-compact .row, .layout-compact .row.minor { font-size:.6rem; }
       }
     `;
   }
