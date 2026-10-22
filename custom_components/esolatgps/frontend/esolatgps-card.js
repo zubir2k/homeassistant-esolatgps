@@ -9,7 +9,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "0.2.3";
+const CARD_VERSION = "0.2.5";
 const TZ = "Asia/Kuala_Lumpur";
 
 const PRAYERS = [
@@ -247,15 +247,15 @@ class EsolatGpsCard extends HTMLElement {
       theme: "sky",
       language: "ms",
       layout: "compact",
-      hour12: true,
-      show_clock: true,
+      hour12: false,
+      show_clock: false,
       show_imsak: false,
       show_syuruk: false,
       show_isyraq_dhuha: false,
-      show_moon: true,
-      show_location: true,
-      home_when_home: true,
-      seconds_threshold: 5,
+      show_moon: false,
+      show_location: false,
+      home_when_home: false,
+      seconds_threshold: 60,
       tap_action: "more-info",
       ...config,
     };
@@ -321,7 +321,7 @@ class EsolatGpsCard extends HTMLElement {
 
   /* Current / next across the full schedule (visible or not), like sensor.esolatnow. */
   _currentNext(schedule, now) {
-    const core = schedule.filter((p) => !p.optional);
+    const core = schedule; // include Isyraq/Dhuha so it matches sensor.esolatnow
     let current = null;
     let next = null;
     let tomorrow = false;
@@ -435,7 +435,7 @@ class EsolatGpsCard extends HTMLElement {
             </svg>
             ${cfg.show_moon && hijriDay ? moonSvg(hijriDay, "currentColor") : ""}
             <div class="ring-inner">
-              <div class="lbl">${t.next}${cn.tomorrow ? ` · ${t.tomorrow}` : ""}</div>
+              <div class="lbl">${t.next}</div>
               <div class="nname">${this._label(cn.next, now)}</div>
               <div class="cd" id="cd">--</div>
               <div class="ntime">${fmtTime(cn.next.time, cfg.hour12, tz)}</div>
@@ -598,7 +598,7 @@ class EsolatGpsCard extends HTMLElement {
       .layout-compact .ring-wrap { width:120px; height:120px; }
       .layout-compact .cd { font-size:1.4rem; }
       .layout-compact .nname { font-size:.95rem; }
-      .layout-compact .clock { font-size:2.8rem; }
+      .layout-compact .clock { font-size:3.0rem; }
       .layout-compact .lbl { font-size:.62rem; letter-spacing:1px; }
       .layout-compact .list { flex-direction:row; gap:4px; }
       .layout-compact .row { flex:1; grid-template-columns:1fr; text-align:center; justify-items:center; gap:2px; padding:8px 4px; font-size:.82rem; }
