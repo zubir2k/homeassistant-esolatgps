@@ -9,7 +9,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "0.2.5";
+const CARD_VERSION = "0.2.6";
 const TZ = "Asia/Kuala_Lumpur";
 
 const PRAYERS = [
@@ -241,7 +241,22 @@ class EsolatGpsCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config) throw new Error("Invalid configuration");
+    if (!config || typeof config !== "object") throw new Error("Invalid configuration");
+    // Home Assistant shows a thrown error in place of the card, so fail loudly on typos.
+    const oneOf = (key, allowed) => {
+      if (config[key] !== undefined && !allowed.includes(config[key])) {
+        throw new Error(`Invalid ${key}: "${config[key]}". Use one of: ${allowed.join(", ")}`);
+      }
+    };
+    oneOf("theme", ["sky", "ha", ...Object.keys(PALETTES)]);
+    oneOf("language", ["ms", "en"]);
+    oneOf("layout", ["auto", "full", "compact"]);
+    if (config.entity !== undefined && typeof config.entity !== "string") {
+      throw new Error("entity must be a sensor entity id, or \"auto\"");
+    }
+    if (config.seconds_threshold !== undefined && !Number.isFinite(Number(config.seconds_threshold))) {
+      throw new Error("seconds_threshold must be a number of minutes");
+    }
     this._config = {
       entity: "auto",
       theme: "sky",
@@ -264,11 +279,25 @@ class EsolatGpsCard extends HTMLElement {
   }
 
   set hass(hass) {
+    // hass is replaced on every state change anywhere in the home. Only re-render
+    // when something this card actually reads has changed (state objects are
+    // replaced, not mutated, so a reference check is enough).
+    const prev = this._hass;
     this._hass = hass;
+    const id = this._entityId;
+    if (
+      prev && id && this._config &&
+      prev.states[id] === hass.states[id] &&
+      prev.states["sensor.esolatnow"] === hass.states["sensor.esolatnow"] &&
+      (!this._personId || prev.states[this._personId] === hass.states[this._personId])
+    ) {
+      return;
+    }
     this._render();
   }
 
   connectedCallback() {
+    clearInterval(this._timer);
     this._timer = setInterval(() => this._tick(), 1000);
   }
 
@@ -276,8 +305,9 @@ class EsolatGpsCard extends HTMLElement {
     clearInterval(this._timer);
   }
 
+  // Masonry view height, in units of 50px. Compact is roughly 230px, full roughly 500px.
   getCardSize() {
-    return this._config?.layout === "compact" ? 3 : 6;
+    return this._config?.layout === "compact" ? 5 : 10;
   }
 
   getGridOptions() {
@@ -291,13 +321,19 @@ class EsolatGpsCard extends HTMLElement {
     const cfg = this._config;
     if (cfg.entity && cfg.entity !== "auto") return cfg.entity;
 
-    const userName = hass.user?.name;
-    const userId = hass.user?.id;
-    const person = Object.values(hass.states).find(
-      (s) =>
-        s.entity_id.startsWith("person.") &&
-        (s.attributes.user_id === userId || s.attributes.friendly_name === userName)
-    );
+    // Remember which person entity belongs to this user, so we don't scan every
+    // entity in Home Assistant on each update.
+    let person = this._personId ? hass.states[this._personId] : undefined;
+    if (!person) {
+      const userName = hass.user?.name;
+      const userId = hass.user?.id;
+      person = Object.values(hass.states).find(
+        (s) =>
+          s.entity_id.startsWith("person.") &&
+          (s.attributes.user_id === userId || s.attributes.friendly_name === userName)
+      );
+      this._personId = person?.entity_id;
+    }
     if (person) {
       const sensorId = "sensor.esolat_" + person.entity_id.split(".")[1];
       const sensor = hass.states[sensorId];
@@ -513,6 +549,21 @@ class EsolatGpsCard extends HTMLElement {
         root.getElementById("sec").textContent = c.s;
         root.getElementById("ap").textContent = c.ap;
       }
+    }
+
+    // The hass setter no longer re-renders on unrelated updates, so catch time-based
+    // changes here (new day, or the one-hour grace period after midnight ending).
+    const minute = Math.floor(now.getTime() / 60000);
+    if (minute !== this._lastMinute) {
+      this._lastMinute = minute;
+      const tz = this._tz || TZ;
+      const key = `${myDateKey(now, tz)}-${fmtParts(now, { hour: "2-digit", hour12: false }, tz).hour}`;
+      if (this._clockKey && key !== this._clockKey) {
+        this._clockKey = key;
+        this._sig = null;
+        return this._render();
+      }
+      this._clockKey = key;
     }
 
     const cn = this._cn;
