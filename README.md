@@ -124,7 +124,8 @@ tap_action: more-info     # more-info | none
 > [!Tip]
 > For `entity: auto` to follow each user, link every Person to their Home Assistant user (Settings --> People). Users without a GPS tracker see Home times.
 
-![esolatgps](https://github.com/user-attachments/assets/c61d89b5-65e7-4fe5-9ad2-c24c6b220bd4)
+`Sky Theme` changes the background according to the time. More screenshots [here](/screenshots).
+![sky-theme](/screenshots/sky-gallery.png)
 
 ## Special Thanks 🎉
 - [HomeAssistantMalaysia](https://www.facebook.com/groups/homeassistantmalaysia)
