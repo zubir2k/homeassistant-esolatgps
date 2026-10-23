@@ -1,6 +1,7 @@
 {
   "domain": "esolatgps",
   "name": "eSolat GPS",
+  "categories": ["productivity_information.calendars_todos"],
   "codeowners": ["@zubir2k"],
   "config_flow": true,
   "dependencies": ["zone", "person", "http", "frontend"],
