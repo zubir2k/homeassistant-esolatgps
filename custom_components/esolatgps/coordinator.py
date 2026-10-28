@@ -7,7 +7,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 from .const import (
+    DOMAIN,
     DEFAULT_SCAN_INTERVAL,
     ALADHAN_URL,
     NOMINATIM_UA,
@@ -25,6 +27,14 @@ from .zones import ZoneIndex
 MYT = ZoneInfo("Asia/Kuala_Lumpur")
 
 _LOGGER = logging.getLogger(__name__)
+
+STORAGE_VERSION = 1
+STORAGE_KEY = f"{DOMAIN}.cache"
+
+
+def cache_store(hass: HomeAssistant) -> Store:
+    """Timetables kept in .storage so a restart or reload does not refetch them."""
+    return Store(hass, STORAGE_VERSION, STORAGE_KEY)
 
 type EsolatGPSConfigEntry = ConfigEntry["EsolatGPSCoordinator"]
 
@@ -55,6 +65,9 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
         self._aladhan_cache = {}  # {(lat2, lon2, method): (local date, data, fetched at)}
         self._fetched = {}  # {"SGR01": when its month was fetched (UTC)}
         self._aladhan_used = set()  # Aladhan cache keys used during the current update
+        self._store = cache_store(hass)
+        self._loaded = False  # cache read from .storage on the first update
+        self._dirty = False  # cache changed since it was last written
         # What the diagnostic sensors show: one entry per JAKIM zone in use, plus Aladhan when used
         self.diag: dict = {"zones": {}, "aladhan": None}
 
@@ -63,6 +76,8 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
         session = async_get_clientsession(self.hass)
         data = {}
         self._aladhan_used = set()
+        if not self._loaded:
+            await self._async_load_cache()
 
         for entity_id in self.hass.states.async_entity_ids("person"):
             entity = self.hass.states.get(entity_id)
@@ -92,8 +107,47 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
                 self.hijri, self._hijri_day = hijri, today
 
         self._update_diag(data)
+        if self._dirty:
+            await self._async_save_cache()
 
         return data
+
+    async def _async_load_cache(self) -> None:
+        """Restore the JAKIM months and Aladhan days saved before the last restart or reload.
+
+        Anything stale is harmless: a month or day that rolled over is refetched as usual,
+        and zones or areas nobody is in are dropped after the first update.
+        """
+        self._loaded = True
+        try:
+            stored = await self._store.async_load() or {}
+            for zone, entry in (stored.get("jakim") or {}).items():
+                self._months[zone] = entry["data"]
+                self._fetched[zone] = datetime.fromisoformat(entry["fetched"])
+            for entry in stored.get("aladhan") or []:
+                key = (entry["lat"], entry["lon"], entry["method"])
+                self._aladhan_cache[key] = (entry["day"], entry["data"], datetime.fromisoformat(entry["fetched"]))
+        except Exception as e:  # noqa: BLE001
+            _LOGGER.warning("Ignoring unreadable eSolat GPS cache: %s", e)
+            self._months.clear()
+            self._fetched.clear()
+            self._aladhan_cache.clear()
+
+    async def _async_save_cache(self) -> None:
+        self._dirty = False
+        await self._store.async_save(
+            {
+                "jakim": {
+                    zone: {"fetched": self._fetched[zone].isoformat(), "data": month}
+                    for zone, month in self._months.items()
+                    if zone in self._fetched
+                },
+                "aladhan": [
+                    {"lat": k[0], "lon": k[1], "method": k[2], "day": v[0], "data": v[1], "fetched": v[2].isoformat()}
+                    for k, v in self._aladhan_cache.items()
+                ],
+            }
+        )
 
     def _update_diag(self, data: dict) -> None:
         """Rebuild the diagnostics view and drop cached data nobody uses any more.
@@ -114,8 +168,10 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
             _LOGGER.debug("Nobody is in %s any more; dropping its cached timetable", zone)
             self._months.pop(zone, None)
             self._fetched.pop(zone, None)
+            self._dirty = True
         for key in set(self._aladhan_cache) - self._aladhan_used:
             self._aladhan_cache.pop(key, None)
+            self._dirty = True
 
         version = self._zones.version if self._zones else None
         zones = {}
@@ -199,6 +255,7 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
             data = await response.json()
         self._months[zone] = data
         self._fetched[zone] = datetime.now(ZoneInfo("UTC"))
+        self._dirty = True
         return data
 
     async def _fetch_prayer_times(self, session, latitude, longitude, entity_id):
@@ -354,6 +411,7 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
                 if len(self._aladhan_cache) > 64:
                     self._aladhan_cache.clear()
                 self._aladhan_cache[cache_key] = (local_today, data, datetime.now(ZoneInfo("UTC")))
+                self._dirty = True
                 self._aladhan_used.add(cache_key)
         except Exception as e:  # noqa: BLE001
             _LOGGER.error("Aladhan fallback failed for %s: %s", entity_id, e)

@@ -1,4 +1,4 @@
-![esolatgps_banner](/custom_components/esolatgps/brand/logo.png)
+![esolatgps_banner](https://user-images.githubusercontent.com/1905339/223016758-1c0c8058-7375-43d9-bd65-9fc00f48809c.png)
 
 ![GitHub Repo stars](https://img.shields.io/github/stars/zubir2k/homeassistant-esolatgps?style=social)
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/default)
@@ -23,6 +23,8 @@ This is a continuation of [HomeAssistantEsolatGPS](https://github.com/zubir2k/Ho
 - 🌍 Prayer times **outside Malaysia** via Aladhan
 - 📍 Sensor state is now the **reverse-geocoded place** (e.g. `Kampung Sungai Jernih, Hulu Langat`)
 - 🏷️ New attributes: `flag`, `zone`, `region`, `country`, `provider`, `timezone`
+- 🩺 **Diagnostic sensors** per JAKIM zone in use (e.g. `sensor.esolat_sgr01`) and for Aladhan
+- 👤 Person sensors are added and removed automatically as GPS comes and goes, with no reload
 - ⚡ GPS → JAKIM zone is resolved **offline** from bundled zone maps; JAKIM times are fetched once a month per zone, so even a 5-minute interval barely touches the network
 - 🐛 Fixed reverse geolocation for places without a state (e.g. Singapore), which left the sensor unavailable
 
@@ -75,9 +77,11 @@ Both are asked for during setup. Open **Settings → Devices & Services → eSol
 | `sensor.esolat_home` | Prayer times for your Home zone |
 | `sensor.esolat_<person>` | Prayer times for each Person with GPS coordinates |
 | `sensor.esolatnow` | Current and next prayer for every sensor above, plus today's Hijri date |
+| `sensor.esolat_<zone>` | Diagnostic: one per JAKIM zone in use (e.g. `sensor.esolat_sgr01`). State is when its timetable was last fetched; attributes show the state, zone areas, cached month and who is in it |
+| `sensor.esolat_aladhan` | Diagnostic: shown while anyone is outside Malaysia. State is the last Aladhan fetch; attributes list the areas, timezones, methods and locations |
 
 > [!NOTE]
-> Person sensors are created when the integration loads. If someone gets a GPS tracker later, reload the integration to create their sensor.
+> Person sensors follow GPS: a person who gets a tracker gets a sensor on the next update, and one who loses GPS has theirs removed. Zone and Aladhan diagnostics are removed, together with their cached data, once nobody is using them.
 
 ### Prayer time sensor
 
@@ -142,7 +146,7 @@ tap_action: more-info     # more-info | none
 
 ## How the data updates
 - Every update interval, each person's GPS position (and the Home zone) is matched to a JAKIM zone **locally**, using zone maps bundled with the integration. No location is sent anywhere for this step.
-- JAKIM's timetable is fetched from waktusolat.app **once per zone per month** and kept in memory. Moving around inside a zone, or two people in the same zone, never triggers a new fetch; entering a new zone fetches that zone once.
+- JAKIM's timetable is fetched from waktusolat.app **once per zone per month** and kept in memory. Moving around inside a zone, or two people in the same zone, never triggers a new fetch; entering a new zone fetches that zone once. Timetables are saved in Home Assistant's `.storage`, so a restart or reload reuses them instead of fetching again. A zone nobody is in any more is dropped.
 - If a position isn't in any JAKIM zone (outside Malaysia), times come from Aladhan, reused for the rest of the day for the same ~1 km area.
 - Place names come from OpenStreetMap (Nominatim), cached for each ~100 m area.
 - The Hijri date on `sensor.esolatnow` comes from JAKIM e-Solat once a day.
@@ -156,7 +160,6 @@ tap_action: more-info     # more-info | none
 Automation examples are in [AUTOMATION.md](AUTOMATION.md).
 
 ## Known limitations
-- Person sensors are created when the integration loads. Reload it after giving someone a GPS tracker.
 - Isyraq isn't published by JAKIM. It's calculated as Syuruk + 12 minutes.
 - Zone maps are by district. JAKIM's special highland zones (e.g. Genting Highlands, Bukit Larut, Gunung Kinabalu, Gunung Jerai) aren't mapped yet, so those spots get their district's zone.
 - JAKIM publishes a year at a time, so the first days of January may be unavailable until the new year's data is released.

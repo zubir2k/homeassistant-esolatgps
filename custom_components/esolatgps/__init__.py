@@ -7,7 +7,7 @@ from homeassistant.helpers import config_validation as cv
 
 from .card_registration import async_register_card, async_unregister_card
 from .const import DOMAIN
-from .coordinator import EsolatGPSConfigEntry, EsolatGPSCoordinator
+from .coordinator import EsolatGPSConfigEntry, EsolatGPSCoordinator, cache_store
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,3 +58,4 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     ]
     if not others:
         await async_unregister_card(hass)
+        await cache_store(hass).async_remove()
