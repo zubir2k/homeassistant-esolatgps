@@ -1,4 +1,4 @@
-![esolatgps_banner](https://user-images.githubusercontent.com/1905339/223016758-1c0c8058-7375-43d9-bd65-9fc00f48809c.png)
+![esolatgps_banner](/custom_components/esolatgps/brand/logo.png)
 
 ![GitHub Repo stars](https://img.shields.io/github/stars/zubir2k/homeassistant-esolatgps?style=social)
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/default)
@@ -11,7 +11,7 @@ Assalamu'alaikum
 
 This is a custom integration for Home Assistant that creates a Prayer Time sensor for each Person based on their GPS coordinates, plus one for your Home zone.
 
-- **In Malaysia:** official JAKIM times via **[Malaysia Prayer Time](https://mpt.i906.my/)**
+- **In Malaysia:** official JAKIM times via **[waktusolat.app](https://api.waktusolat.app/)**
 - **Outside Malaysia:** times from **[Aladhan](https://aladhan.com/prayer-times-api)**, using the nearest local authority (e.g. MUIS in Singapore, Umm Al-Qura in Makkah)
 
 It also ships with the **eSolat GPS Card**, a dashboard card that's installed automatically with the integration.
@@ -23,13 +23,14 @@ This is a continuation of [HomeAssistantEsolatGPS](https://github.com/zubir2k/Ho
 - 🌍 Prayer times **outside Malaysia** via Aladhan
 - 📍 Sensor state is now the **reverse-geocoded place** (e.g. `Kampung Sungai Jernih, Hulu Langat`)
 - 🏷️ New attributes: `flag`, `zone`, `region`, `country`, `provider`, `timezone`
+- ⚡ GPS → JAKIM zone is resolved **offline** from bundled zone maps; JAKIM times are fetched once a month per zone, so even a 5-minute interval barely touches the network
 - 🐛 Fixed reverse geolocation for places without a state (e.g. Singapore), which left the sensor unavailable
 
 > [!WARNING]
 > **Breaking change:** the sensor state no longer shows the JAKIM zone name (e.g. `Kajang`). If your automations or templates use the old state, switch them to the `zone` attribute.
 
 ## Requirements
-- Home Assistant 2024.1 or newer (2024.7+ recommended)
+- Home Assistant 2025.1 or newer
 - Person entity with GPS location (device tracker, e.g. the Companion app)
 
 ## Installation
@@ -57,6 +58,16 @@ This is a continuation of [HomeAssistantEsolatGPS](https://github.com/zubir2k/Ho
 > 3. Search for `eSolat GPS`
 > 4. Adjust the interval to your preference. Default is set to 15 minutes.
 
+Setup checks that the JAKIM service (waktusolat.app) can be reached before it finishes. Everything appears under one **eSolat GPS** service in Settings → Devices & Services.
+
+### Options
+Both are asked for during setup. Open **Settings → Devices & Services → eSolat GPS → Configure** to change them at any time. The integration reloads on save.
+
+| Option | Default | What it does |
+|---|---|---|
+| Update interval | 15 min | How often (5 to 60 minutes) each person's location and prayer times are looked up |
+| Calculation method outside Malaysia | Auto | The Aladhan method used when someone is outside Malaysia. Auto picks the nearest local authority. JAKIM isn't in the list, because Malaysia always uses JAKIM |
+
 ## Sensors
 
 | Entity | Description |
@@ -75,10 +86,12 @@ This is a continuation of [HomeAssistantEsolatGPS](https://github.com/zubir2k/Ho
 | Attribute | Example | Notes |
 |---|---|---|
 | `flag` | `local` / `outside_malaysia` | Where the times come from |
-| `zone` | `Kajang` | JAKIM zone place (Malaysia only) |
+| `zone` | `SGR01` | JAKIM zone code (Malaysia only) |
+| `zone_name` | `Gombak, Petaling, Sepang, Hulu Langat, Hulu Selangor, Shah Alam` | JAKIM zone areas (Malaysia only) |
+| `hijri` | `1448-05-15` | Hijri date from JAKIM (Malaysia only) |
 | `region` | `Selangor` | State or region |
 | `country` | `Malaysia` | |
-| `provider` | `JAKIM (MPT)` / `Aladhan` | |
+| `provider` | `JAKIM (waktusolat.app)` / `Aladhan` | |
 | `method` | `Majlis Ugama Islam Singapura, Singapore` | Calculation authority (outside Malaysia only) |
 | `timezone` | `Asia/Kuala_Lumpur` | Local timezone of the location |
 | `gps` | `2.99,101.78` | |
@@ -127,8 +140,42 @@ tap_action: more-info     # more-info | none
 `Sky Theme` changes the background according to the time. More screenshots [here](/screenshots).
 ![sky-theme](/screenshots/sky-gallery.png)
 
+## How the data updates
+- Every update interval, each person's GPS position (and the Home zone) is matched to a JAKIM zone **locally**, using zone maps bundled with the integration. No location is sent anywhere for this step.
+- JAKIM's timetable is fetched from waktusolat.app **once per zone per month** and kept in memory. Moving around inside a zone, or two people in the same zone, never triggers a new fetch; entering a new zone fetches that zone once.
+- If a position isn't in any JAKIM zone (outside Malaysia), times come from Aladhan, reused for the rest of the day for the same ~1 km area.
+- Place names come from OpenStreetMap (Nominatim), cached for each ~100 m area.
+- The Hijri date on `sensor.esolatnow` comes from JAKIM e-Solat once a day.
+- `sensor.esolatnow` recalculates the current and next prayer every minute.
+
+## Use cases and examples
+- Play the azan at each prayer time where *you* are, not just at home
+- Announce Imsak and Maghrib during Ramadhan
+- Show the next prayer and a countdown on a wall tablet with the eSolat GPS Card
+
+Automation examples are in [AUTOMATION.md](AUTOMATION.md).
+
+## Known limitations
+- Person sensors are created when the integration loads. Reload it after giving someone a GPS tracker.
+- Isyraq isn't published by JAKIM. It's calculated as Syuruk + 12 minutes.
+- Zone maps are by district. JAKIM's special highland zones (e.g. Genting Highlands, Bukit Larut, Gunung Kinabalu, Gunung Jerai) aren't mapped yet, so those spots get their district's zone.
+- JAKIM publishes a year at a time, so the first days of January may be unavailable until the new year's data is released.
+- Times outside Malaysia follow Aladhan's calculation, which can differ by a minute or two from the local authority's published timetable.
+
+## Troubleshooting
+- **A sensor is unavailable:** check that the person has a GPS location (their tracker shows coordinates), then look at **Settings → System → Logs** for `esolatgps`.
+- **Every sensor is unavailable:** waktusolat.app or your internet connection is down. Home Assistant retries automatically, and the log shows it once when it fails and once when it recovers.
+- **The place name looks wrong:** it's OpenStreetMap's name for that spot. Prayer times use the JAKIM `zone` attribute, not the place name.
+- **Reporting a bug:** open the integration's ⋮ menu → **Download diagnostics** (locations are redacted) and attach it to an [issue](https://github.com/zubir2k/homeassistant-esolatgps/issues).
+
+## Removal
+1. Go to **Settings → Devices & Services → eSolat GPS**.
+2. Open the ⋮ menu and choose **Delete**. The sensors and the card's dashboard resource are removed.
+3. To uninstall the files too, remove eSolat GPS in HACS (or delete `custom_components/esolatgps`) and restart Home Assistant.
+
 ## Special Thanks 🎉
 - [HomeAssistantMalaysia](https://www.facebook.com/groups/homeassistantmalaysia)
-- Saudara [Noorzaini Ilhami](https://github.com/i906) for his [MPT API](https://github.com/MalaysiaPrayerTimes)
+- Saudara [Fareez Iqmal](https://github.com/iqfareez) for his [WaktuSolat API](https://github.com/mptwaktusolat/api-waktusolat-x)
 - Prayer times data by [JAKIM](https://www.e-solat.gov.my/) and [Aladhan](https://aladhan.com/)
+- JAKIM zone maps from [mptwaktusolat/jakim.geojson](https://github.com/mptwaktusolat/jakim.geojson) (based on [nullifye/malaysia.geojson](https://github.com/nullifye/malaysia.geojson)); rebuild with `scripts/build_zones.py`
 - Geolocation data by [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors via Nominatim

@@ -1,0 +1,4 @@
+# Matches Home Assistant 2025.1.4, the oldest release this integration supports
+pytest-homeassistant-custom-component==0.13.205
+home-assistant-frontend==20250109.2
+pytest-cov

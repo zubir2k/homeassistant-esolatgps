@@ -9,7 +9,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "0.2.6";
+const CARD_VERSION = "0.2.7";
 const TZ = "Asia/Kuala_Lumpur";
 
 const PRAYERS = [
@@ -57,6 +57,60 @@ const T = {
     s: "s",
     adhan: "It is now time for",
   },
+};
+
+/* Rotating reminders (Quran & Hadith) shown under the times when show_slides is on.
+   Each slide: ar (Arabic), ms (Malay), en (English). custom_slides in YAML replaces this list. */
+const DEFAULT_SLIDES = [
+  { ar: "قال الله تعالى: ﴿إِنَّ الصَّلَاةَ كَانَتْ عَلَى الْمُؤْمِنِينَ كِتَابًا مَوْقُوتًا﴾ [النساء: 103]",
+    ms: "Allah berfirman: “Sesungguhnya solat itu adalah satu ketetapan yang diwajibkan ke atas orang-orang yang beriman, yang tertentu waktunya.” (An-Nisa' 4:103)",
+    en: "Allah says: “Indeed, prayer has been decreed upon the believers a decree of specified times.” (Quran 4:103)" },
+  { ar: "قال الله تعالى: ﴿أَقِمِ الصَّلَاةَ لِدُلُوكِ الشَّمْسِ إِلَىٰ غَسَقِ اللَّيْلِ وَقُرْآنَ الْفَجْرِ ۖ إِنَّ قُرْآنَ الْفَجْرِ كَانَ مَشْهُودًا﴾ [الإسراء: 78]",
+    ms: "Allah berfirman: “Dirikanlah solat ketika gelincir matahari hingga gelap malam, dan (dirikanlah) bacaan Al-Quran pada waktu Subuh. Sesungguhnya bacaan pada waktu Subuh itu disaksikan.” (Al-Isra' 17:78)",
+    en: "Allah says: “Establish prayer at the decline of the sun until the darkness of the night and recite the Qur'an at dawn. Indeed, the recitation of dawn is ever witnessed.” (Quran 17:78)" },
+  { ar: "قال الله تعالى: ﴿يَا أَيُّهَا الَّذِينَ آمَنُوا إِذَا نُودِيَ لِلصَّلَاةِ مِن يَوْمِ الْجُمُعَةِ فَاسْعَوْا إِلَىٰ ذِكْرِ اللَّهِ﴾ [الجمعة: 9]",
+    ms: "Allah berfirman: “Wahai orang-orang yang beriman, apabila diserukan azan untuk solat pada hari Jumaat, maka segeralah kamu pergi mengingati Allah.” (Al-Jumu'ah 62:9)",
+    en: "Allah says: “O you who have believed, when the adhan is called for the prayer on the day of Jumu'ah, proceed to the remembrance of Allah.” (Quran 62:9)" },
+  { ar: "قال النبي ﷺ: «صَلُّوا كَمَا رَأَيْتُمُونِي أُصَلِّي» [رواه البخاري]",
+    ms: "Nabi ﷺ bersabda: “Solatlah kamu sebagaimana kamu melihat aku solat.” (Sahih al-Bukhari)",
+    en: "The Prophet ﷺ said: “Pray as you have seen me praying.” (Sahih al-Bukhari)" },
+  { ar: "قال النبي ﷺ: «أَقْرَبُ ما يَكونُ العَبْدُ مِن رَبِّهِ وهو ساجِدٌ، فأكْثِرُوا الدُّعاءَ» [رواه مسلم]",
+    ms: "Nabi ﷺ bersabda: “Saat seorang hamba paling hampir dengan Tuhannya ialah ketika dia sujud, maka perbanyakkanlah doa.” (Sahih Muslim)",
+    en: "The Prophet ﷺ said: “The nearest a servant comes to his Lord is when he is prostrating, so make much supplication.” (Sahih Muslim)" },
+  { ar: "قال النبي ﷺ: «عَلَيْكَ بكَثْرَةِ السُّجُودِ لِلَّهِ، فإنَّكَ لا تَسْجُدُ لِلَّهِ سَجْدَةً، إلَّا رَفَعَكَ اللَّهُ بها دَرَجَةً، وحَطَّ عَنْكَ بها خَطِيئَةً» [رواه مسلم]",
+    ms: "Nabi ﷺ bersabda: “Perbanyakkanlah sujud kepada Allah, kerana tidaklah kamu sujud kepada Allah dengan satu sujud melainkan Allah mengangkatmu satu darjat dan menghapuskan satu kesalahanmu.” (Sahih Muslim)",
+    en: "The Prophet ﷺ said: “Prostrate yourself much before Allah, for you will not perform a prostration but Allah will raise you a degree and wipe away a sin.” (Sahih Muslim)" },
+  { ar: "قال النبي ﷺ: «الطُّهُورُ شَطْرُ الإِيمَانِ» [رواه مسلم]",
+    ms: "Nabi ﷺ bersabda: “Bersuci itu separuh daripada iman.” (Sahih Muslim)",
+    en: "The Prophet ﷺ said: “Purity is half of faith.” (Sahih Muslim)" },
+  { ar: "قال النبي ﷺ: «صَلَاةُ الجَمَاعَةِ تَفْضُلُ صَلَاةَ الفَذِّ بسَبْعٍ وعِشْرِينَ دَرَجَةً» [متفق عليه]",
+    ms: "Nabi ﷺ bersabda: “Solat berjemaah lebih utama daripada solat bersendirian dengan dua puluh tujuh darjat.” (Bukhari & Muslim)",
+    en: "The Prophet ﷺ said: “Prayer in congregation is twenty-seven times more meritorious than a prayer performed individually.” (Bukhari & Muslim)" },
+  { ar: "قال النبي ﷺ: «بَشِّرِ المَشَّائِينَ في الظُّلَمِ إلى المَسَاجِدِ بالنُّورِ التَّامِّ يَومَ القِيَامَةِ» [رواه أبو داود والترمذي]",
+    ms: "Nabi ﷺ bersabda: “Khabarkanlah berita gembira kepada mereka yang berjalan dalam kegelapan menuju ke masjid dengan cahaya yang sempurna pada hari kiamat.” (Abu Daud & Tirmizi)",
+    en: "The Prophet ﷺ said: “Give glad tidings to those who walk to the mosques in the dark of complete light on the Day of Resurrection.” (Abu Dawud & Tirmidhi)" },
+  { ar: "قال النبي ﷺ: «إِذَا دَخَلَ أَحَدُكُمُ المَسْجِدَ فَلْيَقُلْ: اللَّهُمَّ افْتَحْ لِي أَبْوَابَ رَحْمَتِكَ» [رواه مسلم]",
+    ms: "Nabi ﷺ bersabda: “Apabila seseorang daripada kamu masuk ke masjid, hendaklah dia berdoa: Ya Allah, bukakanlah untukku pintu-pintu rahmat-Mu.” (Sahih Muslim)",
+    en: "The Prophet ﷺ said: “When one of you enters the mosque, he should say: O Allah, open for me the gates of Your mercy.” (Sahih Muslim)" },
+  { ar: "قال النبي ﷺ: «إِذَا دَخَلَ أَحَدُكُمُ الْمَسْجِدَ فَلَا يَجْلِسْ حَتَّى يُصَلِّيَ رَكْعَتَيْنِ» [متفق عليه]",
+    ms: "Nabi ﷺ bersabda: “Apabila seseorang daripada kamu masuk ke masjid, janganlah dia duduk sehingga dia solat dua rakaat.” (Bukhari & Muslim)",
+    en: "The Prophet ﷺ said: “When one of you enters the mosque, he should not sit down until he has prayed two rak'ahs.” (Bukhari & Muslim)" },
+  { ar: "قال النبي ﷺ: «سَوُّوا صُفُوفَكُمْ، فَإِنَّ تَسْوِيَةَ الصَّفِّ مِنْ تَمَامِ الصَّلَاةِ» [متفق عليه]",
+    ms: "Nabi ﷺ bersabda: “Luruskanlah saf-saf kamu, kerana meluruskan saf itu sebahagian daripada kesempurnaan solat.” (Bukhari & Muslim)",
+    en: "The Prophet ﷺ said: “Straighten your rows, for straightening the rows is part of the perfection of prayer.” (Bukhari & Muslim)" },
+];
+
+/* Bundled Amiri (OFL) for the Arabic reminders. @font-face does not register from inside a
+   shadow root, so the rule goes into the page once. The integration serves frontend/ at
+   /esolatgps_static; the browser only downloads the font when Arabic text actually uses it,
+   and falls back to the system Arabic fonts if it is missing (e.g. a manual /local install). */
+const FONT_URL = "/esolatgps_static/fonts/Amiri-Regular.woff2";
+const ensureArabicFont = () => {
+  if (document.getElementById("esolatgps-fonts")) return;
+  const st = document.createElement("style");
+  st.id = "esolatgps-fonts";
+  st.textContent = `@font-face{font-family:"eSolat Amiri";src:url("${FONT_URL}") format("woff2");font-weight:400;font-style:normal;font-display:swap;unicode-range:U+0600-06FF,U+0750-077F,U+08A0-08FF,U+FB50-FDFF,U+FE70-FEFF;}`;
+  document.head.appendChild(st);
 };
 
 /* Sky gradients per prayer period (Iman-Pro-style "sky" theme). */
@@ -215,8 +269,10 @@ class EsolatGpsCard extends HTMLElement {
             { name: "show_moon", selector: { boolean: {} } },
             { name: "show_location", selector: { boolean: {} } },
             { name: "home_when_home", selector: { boolean: {} } },
+            { name: "show_slides", selector: { boolean: {} } },
           ],
         },
+        { name: "slide_interval", selector: { number: { min: 5, max: 600, mode: "box", unit_of_measurement: "s" } } },
         { name: "height", selector: { text: {} } },
       ],
       computeLabel: (s) =>
@@ -235,6 +291,8 @@ class EsolatGpsCard extends HTMLElement {
           show_moon: "Show moon phase",
           show_location: "Show location",
           home_when_home: "Use Home times when user is home (auto)",
+          show_slides: "Show rotating Quran & Hadith reminders",
+          slide_interval: "Reminder rotation (seconds)",
           height: "Fixed height (e.g. 420px, optional)",
         }[s.name] ?? s.name),
     };
@@ -257,6 +315,14 @@ class EsolatGpsCard extends HTMLElement {
     if (config.seconds_threshold !== undefined && !Number.isFinite(Number(config.seconds_threshold))) {
       throw new Error("seconds_threshold must be a number of minutes");
     }
+    if (config.slide_interval !== undefined && !(Number(config.slide_interval) >= 5)) {
+      throw new Error("slide_interval must be at least 5 seconds");
+    }
+    if (config.custom_slides !== undefined) {
+      const ok = Array.isArray(config.custom_slides) && config.custom_slides.length &&
+        config.custom_slides.every((x) => typeof x === "string" || (x && typeof x === "object" && (x.ar || x.ms || x.en)));
+      if (!ok) throw new Error("custom_slides must be a list of text, or of { ar, ms, en } items");
+    }
     this._config = {
       entity: "auto",
       theme: "sky",
@@ -270,7 +336,9 @@ class EsolatGpsCard extends HTMLElement {
       show_moon: false,
       show_location: false,
       home_when_home: false,
-      seconds_threshold: 60,
+      seconds_threshold: 1,
+      show_slides: false,
+      slide_interval: 25,
       tap_action: "more-info",
       ...config,
     };
@@ -303,6 +371,7 @@ class EsolatGpsCard extends HTMLElement {
 
   disconnectedCallback() {
     clearInterval(this._timer);
+    clearTimeout(this._slideTimer);
   }
 
   // Masonry view height, in units of 50px. Compact is roughly 230px, full roughly 500px.
@@ -504,6 +573,7 @@ class EsolatGpsCard extends HTMLElement {
         <div class="content">
           ${title || loc ? `<div class="header">${title}${loc}</div>` : ""}
           ${body}
+          ${cfg.show_slides ? this._slideHtml(now) : ""}
         </div>
       </ha-card>`;
 
@@ -514,8 +584,60 @@ class EsolatGpsCard extends HTMLElement {
       this.dispatchEvent(ev);
     });
 
+    const slidesEl = this.shadowRoot.querySelector(".slides");
+    if (slidesEl) {
+      // Tap a reminder to skip to the next one (without opening more-info)
+      slidesEl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._slideOffset = (this._slideOffset || 0) + 1;
+        this._rotateSlide(new Date());
+      });
+    }
+
     this._cn = cn;
     this._tick();
+  }
+
+  /* ---------- reminders slider ---------- */
+
+  _slides() {
+    const list = this._config.custom_slides || DEFAULT_SLIDES;
+    return list.map((x) => (typeof x === "string" ? { text: x } : x));
+  }
+
+  // Index comes from the clock, so every screen shows the same reminder and a re-render never resets it.
+  _slideIndex(now) {
+    const n = this._slides().length;
+    const iv = Math.max(5, Number(this._config.slide_interval) || 25) * 1000;
+    return (Math.floor(now.getTime() / iv) + (this._slideOffset || 0)) % n;
+  }
+
+  _slideInner(i) {
+    const s = this._slides()[i] || {};
+    const lang = this._config.language === "en" ? "en" : "ms";
+    const tr = s.text || s[lang] || s.en || s.ms || "";
+    return `${s.ar ? `<div class="slide-ar" dir="rtl" lang="ar">${escapeHtml(s.ar)}</div>` : ""}${tr ? `<div class="slide-tr">${escapeHtml(tr)}</div>` : ""}`;
+  }
+
+  _slideHtml(now) {
+    ensureArabicFont();
+    const i = this._slideIndex(now);
+    this._slideShown = i;
+    return `<div class="slides"><div class="slide">${this._slideInner(i)}</div></div>`;
+  }
+
+  _rotateSlide(now) {
+    const el = this.shadowRoot?.querySelector(".slide");
+    if (!el) return;
+    const i = this._slideIndex(now);
+    if (i === this._slideShown) return;
+    this._slideShown = i;
+    el.classList.add("out");
+    clearTimeout(this._slideTimer);
+    this._slideTimer = setTimeout(() => {
+      el.innerHTML = this._slideInner(i);
+      el.classList.remove("out");
+    }, 450);
   }
 
   _status(stateObj, now) {
@@ -565,6 +687,8 @@ class EsolatGpsCard extends HTMLElement {
       }
       this._clockKey = key;
     }
+
+    if (cfg.show_slides) this._rotateSlide(now);
 
     const cn = this._cn;
     if (!cn || !cn.next) return;
@@ -643,6 +767,19 @@ class EsolatGpsCard extends HTMLElement {
       .row.active ha-icon, .row.active .time { color:var(--esg-accent); }
       .row.upcoming .name::after { content:"•"; margin-left:6px; color:var(--esg-accent); }
 
+      .slides { margin-top:auto; padding-top:12px; border-top:1px solid var(--esg-row); cursor:pointer; }
+      .slide { display:flex; flex-direction:column; justify-content:center; gap:6px; min-height:6.4em; text-align:center;
+               transition:opacity .45s ease, transform .45s ease; }
+      .slide.out { opacity:0; transform:translateY(6px); }
+      .slide-ar { font-family:"eSolat Amiri","Amiri","Scheherazade New","Noto Naskh Arabic","Traditional Arabic",serif; font-size:1.25rem; line-height:1.7;
+                  padding:0 4px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+      .slide-tr { font-size:.78rem; line-height:1.45; font-style:italic; color:var(--esg-muted);
+                  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+      .layout-compact .slides { padding-top:10px; }
+      .layout-compact .slide { min-height:5.6em; gap:4px; }
+      .layout-compact .slide-ar { font-size:1.05rem; line-height:1.6; }
+      .layout-compact .slide-tr { font-size:.72rem; -webkit-line-clamp:2; }
+
       .notice { display:flex; align-items:center; gap:10px; padding:14px; border-radius:12px; background:var(--esg-row); }
 
       /* Compact: horizontal strip of prayers under a slim hero */
@@ -660,7 +797,7 @@ class EsolatGpsCard extends HTMLElement {
       /* Wide (tablet/TV): ring + list side by side */
       @container (min-width: 680px) {
         .layout-auto .content, .layout-full .content { display:grid; grid-template-columns: auto 1fr; grid-template-rows:auto 1fr; column-gap:28px; }
-        .layout-auto .header, .layout-full .header { grid-column:1 / -1; }
+        .layout-auto .header, .layout-full .header, .layout-auto .slides, .layout-full .slides { grid-column:1 / -1; }
         .layout-auto .hero, .layout-full .hero { flex-direction:column; align-items:flex-start; }
         .layout-auto .ring-wrap, .layout-full .ring-wrap { width:220px; height:220px; }
         .layout-auto .cd, .layout-full .cd { font-size:2.4rem; }
@@ -693,6 +830,8 @@ class EsolatGpsCard extends HTMLElement {
         .layout-compact .list { gap:3px; }
         .layout-compact .row, .layout-compact .row.minor { padding:7px 1px; font-size:.66rem; border-radius:9px; min-width:0; }
         .layout-compact .row ha-icon { --mdc-icon-size:16px; }
+        .layout-compact .slide-ar { font-size:.98rem; }
+        .layout-compact .slide-tr { font-size:.68rem; -webkit-line-clamp:3; }
         .layout-compact .row .name, .layout-compact .row .time { white-space:nowrap; overflow:hidden; text-overflow:clip; max-width:100%; letter-spacing:-.2px; }
       }
       @container (max-width: 340px) {

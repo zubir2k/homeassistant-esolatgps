@@ -1,0 +1,87 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "eSolat GPS",
+        "description": "Prayer times for every person with GPS location and for your Home zone. JAKIM times in Malaysia, Aladhan elsewhere.",
+        "data": {
+          "scan_interval": "Update interval",
+          "aladhan_method": "Calculation method outside Malaysia"
+        },
+        "data_description": {
+          "scan_interval": "How often, in minutes, to look up each person's location and prayer times (5 to 60).",
+          "aladhan_method": "Used by Aladhan when a person is outside Malaysia. Auto picks the nearest local authority. Malaysia always uses JAKIM."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the JAKIM prayer times service (waktusolat.app). Check your internet connection and try again."
+    },
+    "abort": {
+      "single_instance_allowed": "eSolat GPS is already set up. Only one instance is allowed."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "eSolat GPS options",
+        "data": {
+          "scan_interval": "Update interval",
+          "aladhan_method": "Calculation method outside Malaysia"
+        },
+        "data_description": {
+          "scan_interval": "How often, in minutes, to look up each person's location and prayer times (5 to 60).",
+          "aladhan_method": "Used by Aladhan when a person is outside Malaysia. Auto picks the nearest local authority. Malaysia always uses JAKIM."
+        }
+      }
+    }
+  },
+  "selector": {
+    "aladhan_method": {
+      "options": {
+        "auto": "Auto: nearest local authority",
+        "0": "Shia Ithna-Ashari, Leva Institute, Qum",
+        "1": "University of Islamic Sciences, Karachi",
+        "2": "Islamic Society of North America (ISNA)",
+        "3": "Muslim World League",
+        "4": "Umm Al-Qura University, Makkah",
+        "5": "Egyptian General Authority of Survey",
+        "7": "Institute of Geophysics, University of Tehran",
+        "8": "Gulf Region",
+        "9": "Kuwait",
+        "10": "Qatar",
+        "11": "Majlis Ugama Islam Singapura, Singapore",
+        "12": "Union Organization Islamic de France",
+        "13": "Diyanet İşleri Başkanlığı, Turkey (experimental)",
+        "14": "Spiritual Administration of Muslims of Russia",
+        "15": "Moonsighting Committee Worldwide (Moonsighting.com)",
+        "16": "Dubai (experimental)",
+        "18": "Tunisia",
+        "19": "Algeria",
+        "20": "Kementerian Agama Republik Indonesia",
+        "21": "Morocco",
+        "22": "Comunidade Islamica de Lisboa",
+        "23": "Ministry of Awqaf, Islamic Affairs and Holy Places, Jordan"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "home": {
+        "name": "Home prayer time"
+      },
+      "person": {
+        "name": "{person} prayer time"
+      },
+      "current": {
+        "name": "Current prayer time"
+      },
+      "jakim_zone": {
+        "name": "{zone}"
+      },
+      "aladhan": {
+        "name": "Aladhan"
+      }
+    }
+  }
+}

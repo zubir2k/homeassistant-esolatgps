@@ -2,62 +2,151 @@ import logging
 import aiohttp
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers import entity_registry
-from .const import PRAYER_NAMES, ALADHAN_URL, NOMINATIM_UA, CONF_ALADHAN_METHOD, FLAG_LOCAL, FLAG_OUTSIDE
+from homeassistant.const import CONF_SCAN_INTERVAL
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from .const import (
+    DEFAULT_SCAN_INTERVAL,
+    ALADHAN_URL,
+    NOMINATIM_UA,
+    ALADHAN_METHODS,
+    CONF_ALADHAN_METHOD,
+    FLAG_LOCAL,
+    FLAG_OUTSIDE,
+    WAKTUSOLAT_ZONE_URL,
+    WAKTUSOLAT_FIELDS,
+    ISYRAQ_OFFSET_MINUTES,
+    DHUHA_OFFSET_MINUTES,
+)
+from .zones import ZoneIndex
+
+MYT = ZoneInfo("Asia/Kuala_Lumpur")
 
 _LOGGER = logging.getLogger(__name__)
 
-class EsolatGPSCoordinator(DataUpdateCoordinator):
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry):
+type EsolatGPSConfigEntry = ConfigEntry["EsolatGPSCoordinator"]
+
+
+class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
+    """Fetches prayer times for every person with GPS coordinates and the Home zone."""
+
+    config_entry: EsolatGPSConfigEntry
+
+    def __init__(self, hass: HomeAssistant, entry: EsolatGPSConfigEntry):
         """Initialize the coordinator with the user-configured scan interval."""
+        interval = entry.options.get(
+            CONF_SCAN_INTERVAL, entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        )
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=entry,
             name="eSolat GPS",
-            update_interval=timedelta(minutes=entry.data.get("scan_interval", 15)),
+            update_interval=timedelta(minutes=interval),
         )
-        self.config_entry = entry
-        self.url = "https://mpt.i906.my/api/prayer/"
+        self.hijri = None  # e.g. "6 Jamadil Awwal 1448", refreshed once a day
+        self._hijri_day = None
         self.geo = "https://nominatim.openstreetmap.org/reverse?format=json&"
-        self._tracked_entities = set()
         self._geo_cache = {}
+        self._zones: ZoneIndex | None = None  # bundled polygons, loaded once
+        self._months = {}  # {"SGR01": waktusolat month response}, refetched only when the month rolls over
+        self._aladhan_cache = {}  # {(lat2, lon2, method): (local date, data, fetched at)}
+        self._fetched = {}  # {"SGR01": when its month was fetched (UTC)}
+        self._aladhan_used = set()  # Aladhan cache keys used during the current update
+        # What the diagnostic sensors show: one entry per JAKIM zone in use, plus Aladhan when used
+        self.diag: dict = {"zones": {}, "aladhan": None}
 
     async def _async_update_data(self):
         """Fetch data from API."""
-        async with aiohttp.ClientSession() as session:
-            data = {}
-            current_entities = set()
+        session = async_get_clientsession(self.hass)
+        data = {}
+        self._aladhan_used = set()
 
-            for entity_id in self.hass.states.async_entity_ids("person"):
-                entity = self.hass.states.get(entity_id)
-                latitude = entity.attributes.get("latitude")
-                longitude = entity.attributes.get("longitude")
-                if latitude and longitude:
-                    current_entities.add(entity_id)
-                    data[entity_id] = await self._fetch_prayer_times(session, latitude, longitude, entity_id)
-                else:
-                    _LOGGER.info(f"Skipping {entity_id} as it lacks GPS coordinates.")
+        for entity_id in self.hass.states.async_entity_ids("person"):
+            entity = self.hass.states.get(entity_id)
+            latitude = entity.attributes.get("latitude")
+            longitude = entity.attributes.get("longitude")
+            if latitude and longitude:
+                data[entity_id] = await self._fetch_prayer_times(session, latitude, longitude, entity_id)
+            else:
+                _LOGGER.debug("Skipping %s as it lacks GPS coordinates", entity_id)
 
-            # Home zone processing
-            home = self.hass.states.get("zone.home")
-            home_latitude = home.attributes.get("latitude")
-            home_longitude = home.attributes.get("longitude")
-            data["zone.home"] = await self._fetch_prayer_times(session, home_latitude, home_longitude, "zone.home")
-            current_entities.add("zone.home")
+        # Home zone processing
+        home = self.hass.states.get("zone.home")
+        if home is not None:
+            data["zone.home"] = await self._fetch_prayer_times(
+                session, home.attributes.get("latitude"), home.attributes.get("longitude"), "zone.home"
+            )
 
-            # Cleanup stale entities
-            entities_to_remove = self._tracked_entities - current_entities
-            self._tracked_entities = current_entities
+        # Nothing usable at all means the providers are unreachable: fail the update so
+        # entities go unavailable and the coordinator logs it once (and once on recovery).
+        if not any(v.get("attributes", {}).get("subuh") for v in data.values()):
+            raise UpdateFailed("No prayer times could be retrieved from any provider")
 
-            if entities_to_remove:
-                self.hass.async_create_task(self._remove_stale_entities(entities_to_remove))
+        today = datetime.now(MYT).date()
+        if self._hijri_day != today or not self.hijri:
+            hijri = await self.fetch_hijri_date(session)
+            if hijri != "unavailable":
+                self.hijri, self._hijri_day = hijri, today
 
-            return data
+        self._update_diag(data)
 
-    async def fetch_hijri_date(self):
+        return data
+
+    def _update_diag(self, data: dict) -> None:
+        """Rebuild the diagnostics view and drop cached data nobody uses any more.
+
+        A JAKIM zone stays cached (and keeps its diagnostic sensor) only while at least one
+        tracked location is in it; the same goes for each Aladhan area.
+        """
+        in_zone: dict[str, list[str]] = {}
+        on_aladhan: list[str] = []
+        for entity_id, value in data.items():
+            attrs = value.get("attributes", {})
+            if attrs.get("zone"):
+                in_zone.setdefault(attrs["zone"], []).append(entity_id)
+            elif attrs.get("provider") == "Aladhan":
+                on_aladhan.append(entity_id)
+
+        for zone in set(self._months) - set(in_zone):
+            _LOGGER.debug("Nobody is in %s any more; dropping its cached timetable", zone)
+            self._months.pop(zone, None)
+            self._fetched.pop(zone, None)
+        for key in set(self._aladhan_cache) - self._aladhan_used:
+            self._aladhan_cache.pop(key, None)
+
+        version = self._zones.version if self._zones else None
+        zones = {}
+        for zone, locations in in_zone.items():
+            month = self._months.get(zone)
+            if month is None:
+                continue
+            info = self._zones.zone_info(zone) if self._zones else {}
+            zones[zone] = {
+                "fetched": self._fetched.get(zone),
+                "negeri": info.get("negeri"),
+                "daerah": info.get("daerah"),
+                "month": f"{month.get('month')} {month.get('year')}".strip(),
+                "days": len(month.get("prayers", [])),
+                "locations": sorted(locations),
+                "map_version": version,
+            }
+
+        aladhan = None
+        if self._aladhan_cache:
+            cached = list(self._aladhan_cache.values())
+            aladhan = {
+                "fetched": max(c[2] for c in cached),
+                "areas": len(cached),
+                "timezones": sorted({c[1]["meta"]["timezone"] for c in cached}),
+                "methods": sorted({c[1]["meta"].get("method", {}).get("name") or "?" for c in cached}),
+                "locations": sorted(on_aladhan),
+            }
+        self.diag = {"zones": zones, "aladhan": aladhan}
+
+    async def fetch_hijri_date(self, session):
         """Fetch Hijri date from API."""
         url = "https://www.e-solat.gov.my/index.php"
         params = {
@@ -67,26 +156,25 @@ class EsolatGPSCoordinator(DataUpdateCoordinator):
         }
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        hijri_date = next(iter(data["takwim"].values()))
-                        parts = hijri_date.split('-')
-                        day = parts[2]
-                        month_number = int(parts[1]) - 1
-                        year = parts[0]
+            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=15)) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    hijri_date = next(iter(data["takwim"].values()))
+                    parts = hijri_date.split('-')
+                    day = parts[2]
+                    month_number = int(parts[1]) - 1
+                    year = parts[0]
 
-                        months = [
-                            "Muharram", "Safar", "Rabi'ul Awwal", "Rabi'ul Akhir",
-                            "Jamadil Awwal", "Jamadil Akhir", "Rejab", "Sha'aban",
-                            "Ramadhan", "Syawal", "Zulkaedah", "Zulhijjah"
-                        ]
+                    months = [
+                        "Muharram", "Safar", "Rabi'ul Awwal", "Rabi'ul Akhir",
+                        "Jamadil Awwal", "Jamadil Akhir", "Rejab", "Sha'aban",
+                        "Ramadhan", "Syawal", "Zulkaedah", "Zulhijjah"
+                    ]
 
-                        return f"{day} {months[month_number]} {year}"
-                    else:
-                        _LOGGER.error(f"Failed to fetch Hijri date: HTTP {response.status}")
-                        return "unavailable"
+                    return f"{day} {months[month_number]} {year}"
+                else:
+                    _LOGGER.error(f"Failed to fetch Hijri date: HTTP {response.status}")
+                    return "unavailable"
         except aiohttp.ClientError as e:
             _LOGGER.error(f"Client error fetching Hijri date: {e}")
             return "unavailable"
@@ -94,98 +182,100 @@ class EsolatGPSCoordinator(DataUpdateCoordinator):
             _LOGGER.error(f"Unexpected error fetching Hijri date: {e}")
             return "unavailable"
 
-    async def _remove_stale_entities(self, entities_to_remove):
-        """Remove entities that no longer have GPS coordinates."""
-        ent_reg = entity_registry.async_get(self.hass)
-        for entity_id in entities_to_remove:
-            entity_name = entity_id.split('.')[1]
-            sensor_id = f"sensor.esolat_{entity_name}"
-            if ent_reg.async_get(sensor_id):  # Check if entity exists before removing
-                _LOGGER.info(f"Removing stale entity {sensor_id} due to missing GPS coordinates")
-                ent_reg.async_remove(sensor_id)
+    async def _get_zone_index(self) -> ZoneIndex:
+        if self._zones is None:
+            self._zones = await self.hass.async_add_executor_job(ZoneIndex.load)
+        return self._zones
+
+    async def _get_month(self, session, zone: str, today) -> dict:
+        """JAKIM month for a zone, from cache unless the month changed. Raises on failure with no usable cache."""
+        cached = self._months.get(zone)
+        if cached and cached.get("year") == today.year and cached.get("month_number") == today.month:
+            return cached
+        url = WAKTUSOLAT_ZONE_URL.format(zone=zone)
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as response:
+            if response.status != 200:
+                raise _HttpError(response.status, await response.text())
+            data = await response.json()
+        self._months[zone] = data
+        self._fetched[zone] = datetime.now(ZoneInfo("UTC"))
+        return data
 
     async def _fetch_prayer_times(self, session, latitude, longitude, entity_id):
-        """Fetch prayer times from the API and handle out-of-country cases."""
-        today = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).date()
-        day_index = 0 if today.day == 1 else today.day - 1
+        """JAKIM prayer times for the coordinate's zone; Aladhan outside Malaysia.
+
+        The zone is resolved offline from the bundled polygons, so a poll only touches the
+        network for the place name (Nominatim, cached per ~100 m) and, once a month per zone,
+        for the JAKIM timetable.
+        """
+        today = datetime.now(MYT).date()
+        gps = f"{latitude},{longitude}"
 
         try:
-            async with session.get(f"{self.url}{latitude},{longitude}") as response:
-                if response.status == 404:
-                    # Outside Malaysia (MPT/JAKIM has no zone here) -> fall back to Aladhan
-                    return await self._fetch_aladhan(session, latitude, longitude, entity_id)
-                elif response.status == 200:
-                    data = await response.json()
-                    prayer_times_data = data["data"]["times"][day_index]
-                    prayer_times = {}
+            match = (await self._get_zone_index()).lookup(latitude, longitude)
+            geo = await self._reverse_geocode(session, latitude, longitude) or {}
+            # Matched only by the coastal tolerance: trust the geocoder if it places us abroad
+            # (e.g. Woodlands, Singapore, is within a kilometre of Johor Bahru).
+            if match and not match.exact and geo.get("country_code") not in (None, "MY"):
+                match = None
+            if match is None:
+                return await self._fetch_aladhan(session, latitude, longitude, entity_id)
 
-                    for i, prayer_name in enumerate(PRAYER_NAMES):
-                        prayer_time = prayer_times_data[i]
-                        utc_prayer_time = self.timestamp_to_utc(prayer_time).astimezone(ZoneInfo("UTC"))
-                        prayer_times[prayer_name.lower()] = utc_prayer_time.isoformat()
-                        prayer_times[f"{prayer_name.lower()}_12h"] = self.convert_to_local_12time(prayer_time)
-                        prayer_times[f"{prayer_name.lower()}_24h"] = self.convert_to_local_24time(prayer_time)
+            data = await self._get_month(session, match.zone, today)
 
-                        # Additional times: Imsak, Isyraq, Dhuha
-                        if prayer_name.lower() == "subuh":
-                            imsak_time = utc_prayer_time - timedelta(minutes=10)
-                            prayer_times["imsak"] = imsak_time.isoformat()
-                            prayer_times["imsak_12h"] = self.convert_to_local_12time(imsak_time.timestamp())
-                            prayer_times["imsak_24h"] = self.convert_to_local_24time(imsak_time.timestamp())
+            row = next((d for d in data.get("prayers", []) if d.get("day") == today.day), None)
+            if (
+                row is None
+                or data.get("year") != today.year
+                or data.get("month_number") != today.month
+            ):
+                raise ValueError(
+                    f"No row for {today.isoformat()} in waktusolat.app response "
+                    f"({data.get('month')}/{data.get('year')})"
+                )
 
-                        if prayer_name.lower() == "syuruk":
-                            isyraq_time = utc_prayer_time + timedelta(minutes=12)
-                            dhuha_time = utc_prayer_time + timedelta(minutes=15)
-                            prayer_times["isyraq"] = isyraq_time.isoformat()
-                            prayer_times["isyraq_12h"] = self.convert_to_local_12time(isyraq_time.timestamp())
-                            prayer_times["isyraq_24h"] = self.convert_to_local_24time(isyraq_time.timestamp())
-                            prayer_times["dhuha"] = dhuha_time.isoformat()
-                            prayer_times["dhuha_12h"] = self.convert_to_local_12time(dhuha_time.timestamp())
-                            prayer_times["dhuha_24h"] = self.convert_to_local_24time(dhuha_time.timestamp())
+            prayer_times = {}
 
-                    zone_place = data["data"]["place"]
-                    geo = await self._reverse_geocode(session, latitude, longitude) or {}
-                    return {
-                        "state": geo.get("name") or zone_place,
-                        "attributes": {
-                            "gps": f"{latitude},{longitude}",
-                            "flag": FLAG_LOCAL,
-                            "zone": zone_place,
-                            "region": geo.get("state"),
-                            "country": geo.get("country") or "Malaysia",
-                            "provider": "JAKIM (MPT)",
-                            "timezone": "Asia/Kuala_Lumpur",
-                            **prayer_times,
-                        }
-                    }
-                else:
-                    _LOGGER.error(f"Error retrieving prayer times for {entity_id}: Status {response.status}")
-                    return {
-                        "state": "unavailable",
-                        "attributes": {
-                            "location": f"ERROR CODE:{response.status}",
-                            "gps": f"{latitude},{longitude}"
-                        }
-                    }
+            def put(key, ts):
+                utc = datetime.fromtimestamp(ts, ZoneInfo("UTC"))
+                prayer_times[key] = utc.isoformat()
+                prayer_times[f"{key}_12h"] = self.convert_to_local_12time(ts)
+                prayer_times[f"{key}_24h"] = self.convert_to_local_24time(ts)
+
+            for field, key in WAKTUSOLAT_FIELDS.items():
+                if row.get(field) is not None:
+                    put(key, int(row[field]))
+
+            syuruk = row.get("syuruk")
+            if syuruk is not None:
+                put("isyraq", int(syuruk) + ISYRAQ_OFFSET_MINUTES * 60)
+                if row.get("dhuha") is None:
+                    put("dhuha", int(syuruk) + DHUHA_OFFSET_MINUTES * 60)
+
+            return {
+                "state": geo.get("name") or match.daerah or match.zone,
+                "attributes": {
+                    "gps": gps,
+                    "flag": FLAG_LOCAL,
+                    "zone": match.zone,
+                    "zone_name": match.daerah,
+                    "region": geo.get("state") or match.negeri,
+                    "country": geo.get("country") or "Malaysia",
+                    "provider": "JAKIM (waktusolat.app)",
+                    "timezone": "Asia/Kuala_Lumpur",
+                    "hijri": row.get("hijri"),
+                    **prayer_times,
+                },
+            }
+        except _HttpError as e:
+            _LOGGER.error("Error retrieving prayer times for %s: HTTP %s %s", entity_id, e.status, e.body)
+            return {"state": "unavailable", "attributes": {"location": f"ERROR CODE:{e.status}", "gps": gps}}
         except aiohttp.ClientError as e:
             _LOGGER.error(f"Client error retrieving prayer times for {entity_id}: {e}")
-            return {
-                "state": "unavailable",
-                "attributes": {
-                    "location": "Client error",
-                    "gps": f"{latitude},{longitude}"
-                }
-            }
+            return {"state": "unavailable", "attributes": {"location": "Client error", "gps": gps}}
         except Exception as e:
             _LOGGER.error(f"Unexpected error retrieving prayer times for {entity_id}: {e}")
-            return {
-                "state": "unavailable",
-                "attributes": {
-                    "location": "Unexpected error",
-                    "gps": f"{latitude},{longitude}"
-                }
-            }
-
+            return {"state": "unavailable", "attributes": {"location": "Unexpected error", "gps": gps}}
 
     async def _reverse_geocode(self, session, latitude, longitude):
         """Best-effort place lookup from Nominatim, cached per ~100 m. Never raises.
@@ -240,18 +330,31 @@ class EsolatGPSCoordinator(DataUpdateCoordinator):
 
         params = {"latitude": latitude, "longitude": longitude}
         method = self.config_entry.options.get(CONF_ALADHAN_METHOD, self.config_entry.data.get(CONF_ALADHAN_METHOD)) if self.config_entry else None
-        if method not in (None, "", "auto"):
-            params["method"] = method  # otherwise Aladhan picks the nearest authority
+        if method is not None and str(method) in ALADHAN_METHODS and str(method) != "auto":
+            params["method"] = str(method)  # otherwise Aladhan picks the nearest authority
 
-        # Ask for "today" in UTC first, then re-ask with the location's local date
+        # Same ~1 km cell and method on the same local day: reuse the last answer
+        cache_key = (round(float(latitude), 2), round(float(longitude), 2), params.get("method"))
+        cached = self._aladhan_cache.get(cache_key)
         try:
-            today_utc = datetime.now(ZoneInfo("UTC")).strftime("%d-%m-%Y")
-            data = await self._aladhan_get(session, today_utc, params)
-            tz_name = data["meta"]["timezone"]
-            tz = ZoneInfo(tz_name)
-            local_today = datetime.now(tz).strftime("%d-%m-%Y")
-            if local_today != today_utc:
-                data = await self._aladhan_get(session, local_today, params)
+            if cached and datetime.now(ZoneInfo(cached[1]["meta"]["timezone"])).strftime("%d-%m-%Y") == cached[0]:
+                data = cached[1]
+                self._aladhan_used.add(cache_key)
+                tz_name = data["meta"]["timezone"]
+                tz = ZoneInfo(tz_name)
+            else:
+                # Ask for "today" in UTC first, then re-ask with the location's local date
+                today_utc = datetime.now(ZoneInfo("UTC")).strftime("%d-%m-%Y")
+                data = await self._aladhan_get(session, today_utc, params)
+                tz_name = data["meta"]["timezone"]
+                tz = ZoneInfo(tz_name)
+                local_today = datetime.now(tz).strftime("%d-%m-%Y")
+                if local_today != today_utc:
+                    data = await self._aladhan_get(session, local_today, params)
+                if len(self._aladhan_cache) > 64:
+                    self._aladhan_cache.clear()
+                self._aladhan_cache[cache_key] = (local_today, data, datetime.now(ZoneInfo("UTC")))
+                self._aladhan_used.add(cache_key)
         except Exception as e:  # noqa: BLE001
             _LOGGER.error("Aladhan fallback failed for %s: %s", entity_id, e)
             return {"state": place or "Outside Malaysia", "attributes": {**base_attrs, "error": str(e)}}
@@ -273,8 +376,8 @@ class EsolatGPSCoordinator(DataUpdateCoordinator):
             "maghrib": at(timings["Maghrib"]),
             "isyak": at(timings["Isha"]),
         }
-        local["isyraq"] = local["syuruk"] + timedelta(minutes=12)
-        local["dhuha"] = local["syuruk"] + timedelta(minutes=15)
+        local["isyraq"] = local["syuruk"] + timedelta(minutes=ISYRAQ_OFFSET_MINUTES)
+        local["dhuha"] = local["syuruk"] + timedelta(minutes=DHUHA_OFFSET_MINUTES)
 
         prayer_times = {}
         for key, dt in local.items():
@@ -306,10 +409,6 @@ class EsolatGPSCoordinator(DataUpdateCoordinator):
             return payload["data"]
 
     @staticmethod
-    def timestamp_to_utc(timestamp):
-        return datetime.fromtimestamp(timestamp, ZoneInfo("UTC"))
-
-    @staticmethod
     def convert_to_local_12time(time):
         dt = datetime.fromtimestamp(time, ZoneInfo("Asia/Kuala_Lumpur"))
         return dt.strftime("%-I:%M %p")
@@ -319,3 +418,12 @@ class EsolatGPSCoordinator(DataUpdateCoordinator):
         dt = datetime.fromtimestamp(time, ZoneInfo("Asia/Kuala_Lumpur"))
         return dt.strftime("%H:%M:%S")
 
+
+
+class _HttpError(Exception):
+    """Non-200 from waktusolat.app."""
+
+    def __init__(self, status: int, body: str) -> None:
+        super().__init__(f"HTTP {status}")
+        self.status = status
+        self.body = body

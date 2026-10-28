@@ -16,6 +16,7 @@ usable) fall back to ``add_extra_js_url``, which injects the script into every p
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from pathlib import Path
@@ -33,7 +34,9 @@ CARD_FILENAME = "esolatgps-card.js"
 CARD_URL_BASE = f"/{DOMAIN}_static"
 CARD_URL = f"{CARD_URL_BASE}/{CARD_FILENAME}"
 
-_REGISTERED_KEY = f"{DOMAIN}_card_registered"
+_URL_KEY = f"{DOMAIN}_card_url"
+_INJECTED_KEY = f"{DOMAIN}_card_injected"
+_LOCK_KEY = f"{DOMAIN}_card_lock"
 _LOVELACE_KEY = "lovelace"
 
 
@@ -87,43 +90,51 @@ def _file_digest(path: Path) -> str:
 # Public API
 # --------------------------------------------------------------------------- #
 async def async_register_card(hass: HomeAssistant) -> None:
-    """Serve the card and make dashboards load it. Runs once per Home Assistant start."""
-    if hass.data.get(_REGISTERED_KEY):
-        return
-    hass.data[_REGISTERED_KEY] = True
+    """Serve the card and make dashboards load it.
 
+    Called from ``async_setup`` and again from every ``async_setup_entry``. The static path
+    and the script injection can only be done once per Home Assistant run, so those are
+    guarded. The Lovelace resource is synced on every call, because deleting the last entry
+    removes it and adding the integration back (without a restart) must restore it.
+    """
     card_path = Path(__file__).parent / "frontend" / CARD_FILENAME
     if not card_path.is_file():
         _LOGGER.warning("eSolat GPS card not found at %s", card_path)
         return
 
-    await _async_register_static_path(hass, card_path.parent)
+    lock = hass.data.setdefault(_LOCK_KEY, asyncio.Lock())
+    async with lock:
+        url = hass.data.get(_URL_KEY)
+        if url is None:
+            await _async_register_static_path(hass, card_path.parent)
+            # The cache-busting version changes whenever the card file changes, so a card
+            # update always reaches browsers even if the integration version was not bumped.
+            integration = await async_get_integration(hass, DOMAIN)
+            digest = await hass.async_add_executor_job(_file_digest, card_path)
+            url = f"{CARD_URL}?v={integration.version or '0'}-{digest}"
+            hass.data[_URL_KEY] = url
 
-    # The cache-busting version changes whenever the card file changes, so a card update
-    # always reaches browsers even if the integration version was not bumped.
-    integration = await async_get_integration(hass, DOMAIN)
-    digest = await hass.async_add_executor_job(_file_digest, card_path)
-    version = f"{integration.version or '0'}-{digest}"
-    url = f"{CARD_URL}?v={version}"
+        mode, resources = _lovelace_resources(hass)
+        if mode == "storage" and resources is not None:
+            try:
+                if await _async_ensure_loaded(resources):
+                    await _async_sync_resource(resources, url)
+                    _LOGGER.debug("eSolat GPS card registered as Lovelace resource %s", url)
+                    return
+                _LOGGER.debug("Lovelace resources not loaded; injecting the card script instead")
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning(
+                    "Could not register the eSolat GPS card as a Lovelace resource; "
+                    "injecting the card script instead",
+                    exc_info=True,
+                )
 
-    mode, resources = _lovelace_resources(hass)
-    if mode == "storage" and resources is not None:
-        try:
-            if await _async_ensure_loaded(resources):
-                await _async_sync_resource(resources, url)
-                _LOGGER.debug("eSolat GPS card registered as Lovelace resource %s", url)
-                return
-            _LOGGER.debug("Lovelace resources not loaded; injecting the card script instead")
-        except Exception:  # noqa: BLE001
-            _LOGGER.warning(
-                "Could not register the eSolat GPS card as a Lovelace resource; "
-                "injecting the card script instead",
-                exc_info=True,
-            )
-
-    # YAML-managed resources, or the resource store was not usable.
-    add_extra_js_url(hass, url)
-    _LOGGER.debug("eSolat GPS card injected via add_extra_js_url: %s", url)
+        # YAML-managed resources, or the resource store was not usable. The injected script
+        # lives for the whole Home Assistant run, so add it only once.
+        if not hass.data.get(_INJECTED_KEY):
+            hass.data[_INJECTED_KEY] = True
+            add_extra_js_url(hass, url)
+            _LOGGER.debug("eSolat GPS card injected via add_extra_js_url: %s", url)
 
 
 async def async_unregister_card(hass: HomeAssistant) -> None:

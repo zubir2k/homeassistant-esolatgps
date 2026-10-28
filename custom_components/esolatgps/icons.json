@@ -1,0 +1,21 @@
+{
+  "entity": {
+    "sensor": {
+      "home": {
+        "default": "mdi:home-clock"
+      },
+      "person": {
+        "default": "mdi:account-clock"
+      },
+      "current": {
+        "default": "mdi:calendar-clock"
+      },
+      "jakim_zone": {
+        "default": "mdi:map-marker-radius"
+      },
+      "aladhan": {
+        "default": "mdi:earth"
+      }
+    }
+  }
+}

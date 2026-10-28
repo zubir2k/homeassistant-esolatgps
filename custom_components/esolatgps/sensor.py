@@ -5,95 +5,139 @@ import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.components.sensor import SensorEntity
-from homeassistant.helpers import entity_registry
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.const import EntityCategory
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.core import callback
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, CoordinatorEntity
-from .const import DOMAIN
-from .coordinator import EsolatGPSCoordinator
+from .coordinator import EsolatGPSConfigEntry, EsolatGPSCoordinator
+from .entity import EsolatGPSEntity
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
+# Coordinator-based: the coordinator does all fetching, so no limit is needed
+PARALLEL_UPDATES = 0
+
+
+async def async_setup_entry(
+    hass: HomeAssistant, entry: EsolatGPSConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
     """Set up the EsolatGPS sensors from a config entry."""
-    coordinator = EsolatGPSCoordinator(hass, entry)
-    await coordinator.async_config_entry_first_refresh()
+    coordinator = entry.runtime_data
 
-    sensors = []
-    for person_entity in hass.states.async_entity_ids("person"):
-        if (hass.states.get(person_entity).attributes.get("latitude") is not None
-            and hass.states.get(person_entity).attributes.get("longitude") is not None):
-            sensors.append(EsolatGPSSensor(coordinator, person_entity))
+    async_add_entities([
+        EsolatGPSSensor(coordinator, "zone.home", is_home=True),
+        EsolatNowSensor(coordinator),
+    ])
 
-    sensors.append(EsolatGPSSensor(coordinator, "zone.home", is_home=True))
-    sensors.append(EsolatNowSensor(coordinator, hass))
+    # Everything else follows the coordinator after every update:
+    #  * a prayer sensor per person with GPS (sensor.esolat_<person>), added when GPS appears
+    #    and removed when it goes, including people who lost GPS while HA was down;
+    #  * a diagnostic sensor per JAKIM zone in use (sensor.esolat_sgr01) and one for Aladhan.
+    # Removal goes through the entity registry by unique_id, so renamed entities are caught too.
+    added: set[str] = set()  # unique_ids this platform created during this run
 
-    async_add_entities(sensors)
+    @callback
+    def _sync() -> None:
+        if not coordinator.last_update_success or not coordinator.data:
+            return  # never remove anything on the strength of a failed update
 
-class EsolatGPSSensor(CoordinatorEntity, SensorEntity):
-    """Representation of an EsolatGPS Sensor."""
+        people = {e for e in coordinator.data if e.startswith("person.")}
+        sources = set(coordinator.diag["zones"])
+        if coordinator.diag.get("aladhan"):
+            sources.add(ALADHAN_KEY)
+        wanted = {f"esolat_{p.split('.', 1)[1]}" for p in people} | {
+            f"{DIAG_PREFIX}{k.lower()}" for k in sources
+        }
 
-    def __init__(self, coordinator, entity_id, is_home=False):
+        new = []
+        for person in sorted(people):
+            uid = f"esolat_{person.split('.', 1)[1]}"
+            if uid not in added:
+                new.append(EsolatGPSSensor(coordinator, person))
+                added.add(uid)
+        for key in sorted(sources):
+            uid = f"{DIAG_PREFIX}{key.lower()}"
+            if uid not in added:
+                new.append(EsolatSourceSensor(coordinator, key))
+                added.add(uid)
+        if new:
+            async_add_entities(new)
+
+        ent_reg = er.async_get(hass)
+        for reg in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+            uid = reg.unique_id
+            if uid in FIXED_UNIQUE_IDS or uid in wanted or not uid.startswith("esolat_"):
+                continue
+            _LOGGER.info("Removing %s: no longer tracked", reg.entity_id)
+            ent_reg.async_remove(reg.entity_id)
+            added.discard(uid)
+
+    _sync()
+    entry.async_on_unload(coordinator.async_add_listener(_sync))
+
+
+FIXED_UNIQUE_IDS = {"esolat_home", "esolatnow"}
+DIAG_PREFIX = "esolat_source_"
+ALADHAN_KEY = "ALADHAN"
+
+
+class EsolatGPSSensor(EsolatGPSEntity, SensorEntity):
+    """Prayer times for one person, or for the Home zone."""
+
+    def __init__(self, coordinator: EsolatGPSCoordinator, entity_id: str, is_home: bool = False) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._entity_id = entity_id
         self._is_home = is_home
-        
+
         entity_name = entity_id.split('.')[1]
-        
+
+        # Kept from earlier versions so existing entities, history and dashboards carry over
         self._attr_unique_id = f"esolat_{entity_name}"
         self.entity_id = f"sensor.esolat_{entity_name}"
-        
-        self._attr_icon = "mdi:home-clock" if is_home else "mdi:account-clock"
+
+        if is_home:
+            self._attr_translation_key = "home"
+        else:
+            self._attr_translation_key = "person"
+            person = coordinator.hass.states.get(entity_id)
+            self._attr_translation_placeholders = {
+                "person": person.attributes.get("friendly_name", entity_name) if person else entity_name
+            }
 
     @property
-    def name(self):
-        """Return the name of the sensor."""
-        if self._is_home:
-            return "Home Prayer Time"
-        entity = self.hass.states.get(self._entity_id)
-        if entity:
-            return f"{entity.attributes.get('friendly_name', 'Unknown')} Prayer Time"
-        return "Unknown Prayer Time"
+    def _data(self) -> dict:
+        return (self.coordinator.data or {}).get(self._entity_id) or {}
 
     @property
-    def state(self):
-        """Return the state of the sensor."""
-        return self.coordinator.data.get(self._entity_id, {}).get("state", "unavailable")
+    def available(self) -> bool:
+        """Unavailable when the last update failed or this location could not be resolved."""
+        return super().available and self._data.get("state") not in (None, "unavailable")
+
+    @property
+    def native_value(self):
+        """Place name, e.g. 'Saujana Impian, Hulu Langat'."""
+        return self._data.get("state")
 
     @property
     def extra_state_attributes(self):
         """Return the state attributes, including the source of GPS data."""
-        attributes = self.coordinator.data.get(self._entity_id, {}).get("attributes", {}).copy()
+        attributes = self._data.get("attributes", {}).copy()
         attributes["source"] = self._entity_id
         return attributes
 
-class EsolatNowSensor(CoordinatorEntity, SensorEntity):
-    """Representation of an eSolatNow Sensor that shows current prayer times."""
+class EsolatNowSensor(EsolatGPSEntity, SensorEntity):
+    """Current and next prayer for every tracked location, plus today's Hijri date."""
 
-    def __init__(self, coordinator, hass):
+    _attr_translation_key = "current"
+
+    def __init__(self, coordinator: EsolatGPSCoordinator) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self.hass = hass
         self._attr_unique_id = "esolatnow"
         self.entity_id = "sensor.esolatnow"
-        self._attr_icon = "mdi:calendar-clock"
-        self._hijri_date = None
-        self._last_hijri_update = None
-
-    async def async_get_hijri_date(self):
-        """Get Hijri date from API."""
-        # Update only once per day
-        now = datetime.now()
-        if self._last_hijri_update and self._last_hijri_update.date() == now.date() and self._hijri_date:
-            return self._hijri_date
-
-        self._hijri_date = await self.coordinator.fetch_hijri_date()
-        self._last_hijri_update = now
-        return self._hijri_date
 
     def get_current_prayer_info(self, entity_data):
         """Get current prayer information based on time."""
@@ -181,39 +225,62 @@ class EsolatNowSensor(CoordinatorEntity, SensorEntity):
             async_track_time_interval(self.hass, _tick, timedelta(minutes=1))
         )
 
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return "Current Prayer Time"
+    def _current(self) -> dict:
+        """Current/next prayer per location, keyed by person (or 'home')."""
+        current = {}
+        for entity_id, entity_data in (self.coordinator.data or {}).items():
+            if entity_data.get("attributes", {}).get("subuh"):
+                prayer_info = self.get_current_prayer_info(entity_data)
+                if prayer_info:
+                    current[entity_id.split('.')[1]] = prayer_info
+        return current
 
     @property
-    def state(self):
-        """Return the number of prayer time sensors."""
-        return len(self.extra_state_attributes["array"])
-
-    async def async_update(self):
-        """Update the sensor."""
-        await super().async_update()
-        # Ensure the Hijri date is updated daily
-        await self.async_get_hijri_date()
+    def native_value(self):
+        """Number of locations with a current prayer."""
+        return len(self._current())
 
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
-        attributes = {
-            "hijri": self._hijri_date or "unavailable",
-            "array": {}
+        return {
+            "hijri": self.coordinator.hijri or "unavailable",
+            "array": self._current(),
         }
 
-        # Update Hijri date when accessing attributes
-        self.hass.async_create_task(self.async_get_hijri_date())
 
-        for entity_id, entity_data in self.coordinator.data.items():
-            if entity_data.get("attributes", {}).get("subuh"):
-                prayer_info = self.get_current_prayer_info(entity_data)
-                if prayer_info:
-                    entity_name = entity_id.split('.')[1]
-                    attributes["array"][entity_name] = prayer_info
 
-        return attributes
+class EsolatSourceSensor(EsolatGPSEntity, SensorEntity):
+    """Diagnostic: when a JAKIM zone's timetable (or Aladhan) was last fetched, and who uses it."""
 
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, coordinator: EsolatGPSCoordinator, key: str) -> None:
+        """key is a JAKIM code such as "SGR01", or ALADHAN_KEY."""
+        super().__init__(coordinator)
+        self._key = key
+        self._attr_unique_id = f"{DIAG_PREFIX}{key.lower()}"
+        self.entity_id = f"sensor.esolat_{key.lower()}"
+        if key == ALADHAN_KEY:
+            self._attr_translation_key = "aladhan"
+        else:
+            self._attr_translation_key = "jakim_zone"
+            self._attr_translation_placeholders = {"zone": key}
+
+    @property
+    def _info(self) -> dict | None:
+        diag = self.coordinator.diag
+        return diag.get("aladhan") if self._key == ALADHAN_KEY else diag["zones"].get(self._key)
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._info is not None
+
+    @property
+    def native_value(self):
+        return (self._info or {}).get("fetched")
+
+    @property
+    def extra_state_attributes(self):
+        return {k: v for k, v in (self._info or {}).items() if k != "fetched"}
