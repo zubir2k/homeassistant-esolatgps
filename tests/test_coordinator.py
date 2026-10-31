@@ -134,6 +134,27 @@ async def test_month_rollover_refetches(hass: HomeAssistant, mock_http, frozen) 
     assert len(zone_calls) == 2
 
 
+async def test_first_of_month_before_8am_asks_for_the_malaysian_month(hass: HomeAssistant, mock_http, frozen) -> None:
+    """waktusolat.app defaults to its UTC month; at 00:30 MYT on 1 Nov that is still October."""
+    from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMockResponse
+
+    october = load_json("waktusolat_gps.json")
+    november = {**october, "month": "NOV", "month_number": 11}
+
+    async def zone_month(method, url, data):
+        asked = url.query.get("month")
+        return AiohttpClientMockResponse(method, url, json=november if asked == "11" else october)
+
+    mock_http.get(KJ_URL, side_effect=zone_month)
+    mock_http.get(NOMINATIM, json=load_json("nominatim_kajang.json"))
+    frozen.move_to("2026-11-01 00:30:00+08:00")
+    result = await _fetch(hass, _coordinator(hass), KJ)
+    assert result["attributes"]["subuh"]
+    assert result["attributes"]["zone"] == "SGR01"
+    call = next(c for c in mock_http.mock_calls if "waktusolat" in str(c[1]))
+    assert call[1].query["year"] == "2026" and call[1].query["month"] == "11"
+
+
 async def test_cached_month_survives_provider_outage(hass: HomeAssistant, mock_http) -> None:
     _mock_malaysia(mock_http)
     coord = _coordinator(hass)

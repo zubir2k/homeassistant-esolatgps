@@ -50,7 +50,7 @@ async def test_creates_resource_in_storage_mode(hass: HomeAssistant) -> None:
     static.assert_awaited_once()
     inject.assert_not_called()
     url = res.async_create_item.await_args.args[0]["url"]
-    assert url.startswith(f"{card.CARD_URL}?v=0.4.0-")
+    assert url.startswith(f"{card.CARD_URL}?v=0.4.2-")
 
 
 async def test_updates_old_resource_and_drops_duplicates(hass: HomeAssistant) -> None:

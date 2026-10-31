@@ -249,7 +249,10 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
         if cached and cached.get("year") == today.year and cached.get("month_number") == today.month:
             return cached
         url = WAKTUSOLAT_ZONE_URL.format(zone=zone)
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as response:
+        # Always name the month: without it waktusolat.app answers with its server's (UTC) month,
+        # which is still last month between 00:00 and 08:00 MYT on the 1st.
+        params = {"year": today.year, "month": today.month}
+        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=15)) as response:
             if response.status != 200:
                 raise _HttpError(response.status, await response.text())
             data = await response.json()
