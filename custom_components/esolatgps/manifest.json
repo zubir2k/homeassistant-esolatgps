@@ -1,15 +1,24 @@
 {
   "domain": "esolatgps",
   "name": "eSolat GPS",
-  "categories": ["productivity_information.calendars_todos"],
-  "codeowners": ["@zubir2k"],
+  "categories": [
+    "productivity_information.calendars_todos"
+  ],
+  "codeowners": [
+    "@zubir2k"
+  ],
   "config_flow": true,
-  "dependencies": ["zone", "person", "http", "frontend"],
+  "dependencies": [
+    "zone",
+    "person",
+    "http",
+    "frontend"
+  ],
   "documentation": "https://github.com/zubir2k/homeassistant-esolatgps",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/zubir2k/homeassistant-esolatgps/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.4.2"
+  "version": "0.4.3"
 }

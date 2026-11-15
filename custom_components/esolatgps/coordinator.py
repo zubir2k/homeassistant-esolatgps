@@ -1,4 +1,6 @@
 import logging
+import re
+from typing import Any
 import aiohttp
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -30,6 +32,16 @@ _LOGGER = logging.getLogger(__name__)
 
 STORAGE_VERSION = 1
 STORAGE_KEY = f"{DOMAIN}.cache"
+
+
+def _sanitize_error(error: Any) -> str:
+    """Sanitize error string so raw query URLs with latitude and longitude are not exposed."""
+    msg = str(error)
+    # Redact coordinates in query strings: ?latitude=...&longitude=... or &latitude=...
+    msg = re.sub(r'([?&](?:latitude|longitude)=)[^&\s"\']+', r'\1[REDACTED]', msg)
+    # Strip URL query parameters completely from standard web URLs in error messages
+    msg = re.sub(r'(https?://[^\s?]+)\?[^\s"\']+', r'\1', msg)
+    return msg
 
 
 def cache_store(hass: HomeAssistant) -> Store:
@@ -70,6 +82,7 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
         self._dirty = False  # cache changed since it was last written
         # What the diagnostic sensors show: one entry per JAKIM zone in use, plus Aladhan when used
         self.diag: dict = {"zones": {}, "aladhan": None}
+        self._failed_locations: set[str] = set()
 
     async def _async_update_data(self):
         """Fetch data from API."""
@@ -98,7 +111,10 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
         # Nothing usable at all means the providers are unreachable: fail the update so
         # entities go unavailable and the coordinator logs it once (and once on recovery).
         if not any(v.get("attributes", {}).get("subuh") for v in data.values()):
-            raise UpdateFailed("No prayer times could be retrieved from any provider")
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="no_prayer_times",
+            )
 
         today = datetime.now(MYT).date()
         if self._hijri_day != today or not self.hijri:
@@ -229,13 +245,13 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
 
                     return f"{day} {months[month_number]} {year}"
                 else:
-                    _LOGGER.error(f"Failed to fetch Hijri date: HTTP {response.status}")
+                    _LOGGER.warning("Failed to fetch Hijri date: HTTP %s", response.status)
                     return "unavailable"
         except aiohttp.ClientError as e:
-            _LOGGER.error(f"Client error fetching Hijri date: {e}")
+            _LOGGER.warning("Client error fetching Hijri date: %s", e)
             return "unavailable"
         except Exception as e:
-            _LOGGER.error(f"Unexpected error fetching Hijri date: {e}")
+            _LOGGER.warning("Unexpected error fetching Hijri date: %s", e)
             return "unavailable"
 
     async def _get_zone_index(self) -> ZoneIndex:
@@ -312,6 +328,7 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
                 if row.get("dhuha") is None:
                     put("dhuha", int(syuruk) + DHUHA_OFFSET_MINUTES * 60)
 
+            self._failed_locations.discard(entity_id)
             return {
                 "state": geo.get("name") or match.daerah or match.zone,
                 "attributes": {
@@ -328,13 +345,25 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
                 },
             }
         except _HttpError as e:
-            _LOGGER.error("Error retrieving prayer times for %s: HTTP %s %s", entity_id, e.status, e.body)
+            if entity_id not in self._failed_locations:
+                _LOGGER.warning("Error retrieving prayer times for %s: HTTP %s %s", entity_id, e.status, e.body)
+                self._failed_locations.add(entity_id)
+            else:
+                _LOGGER.debug("Error retrieving prayer times for %s: HTTP %s %s", entity_id, e.status, e.body)
             return {"state": "unavailable", "attributes": {"location": f"ERROR CODE:{e.status}", "gps": gps}}
         except aiohttp.ClientError as e:
-            _LOGGER.error(f"Client error retrieving prayer times for {entity_id}: {e}")
+            if entity_id not in self._failed_locations:
+                _LOGGER.warning("Client error retrieving prayer times for %s: %s", entity_id, e)
+                self._failed_locations.add(entity_id)
+            else:
+                _LOGGER.debug("Client error retrieving prayer times for %s: %s", entity_id, e)
             return {"state": "unavailable", "attributes": {"location": "Client error", "gps": gps}}
         except Exception as e:
-            _LOGGER.error(f"Unexpected error retrieving prayer times for {entity_id}: {e}")
+            if entity_id not in self._failed_locations:
+                _LOGGER.warning("Unexpected error retrieving prayer times for %s: %s", entity_id, e)
+                self._failed_locations.add(entity_id)
+            else:
+                _LOGGER.debug("Unexpected error retrieving prayer times for %s: %s", entity_id, e)
             return {"state": "unavailable", "attributes": {"location": "Unexpected error", "gps": gps}}
 
     async def _reverse_geocode(self, session, latitude, longitude):
@@ -417,8 +446,13 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
                 self._dirty = True
                 self._aladhan_used.add(cache_key)
         except Exception as e:  # noqa: BLE001
-            _LOGGER.error("Aladhan fallback failed for %s: %s", entity_id, e)
-            return {"state": place or "Outside Malaysia", "attributes": {**base_attrs, "error": str(e)}}
+            sanitized_err = _sanitize_error(e)
+            if entity_id not in self._failed_locations:
+                _LOGGER.warning("Aladhan fallback failed for %s: %s", entity_id, sanitized_err)
+                self._failed_locations.add(entity_id)
+            else:
+                _LOGGER.debug("Aladhan fallback failed for %s: %s", entity_id, sanitized_err)
+            return {"state": place or "Outside Malaysia", "attributes": {**base_attrs, "error": sanitized_err}}
 
         timings = data["timings"]
         g = data["date"]["gregorian"]
@@ -443,10 +477,11 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
         prayer_times = {}
         for key, dt in local.items():
             prayer_times[key] = dt.astimezone(ZoneInfo("UTC")).isoformat()
-            prayer_times[f"{key}_12h"] = dt.strftime("%-I:%M %p")
+            prayer_times[f"{key}_12h"] = dt.strftime("%I:%M %p").lstrip("0")
             prayer_times[f"{key}_24h"] = dt.strftime("%H:%M:%S")
 
         method_meta = data.get("meta", {}).get("method", {})
+        self._failed_locations.discard(entity_id)
         return {
             "state": place or tz_name,
             "attributes": {
@@ -472,7 +507,7 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
     @staticmethod
     def convert_to_local_12time(time):
         dt = datetime.fromtimestamp(time, ZoneInfo("Asia/Kuala_Lumpur"))
-        return dt.strftime("%-I:%M %p")
+        return dt.strftime("%I:%M %p").lstrip("0")
 
     @staticmethod
     def convert_to_local_24time(time):

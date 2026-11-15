@@ -65,6 +65,11 @@
       }
     }
   },
+  "exceptions": {
+    "no_prayer_times": {
+      "message": "No prayer times could be retrieved from any provider."
+    }
+  },
   "entity": {
     "sensor": {
       "home": {

@@ -8,8 +8,8 @@ from homeassistant.core import HomeAssistant
 
 from .coordinator import EsolatGPSConfigEntry
 
-# Anything that pinpoints where a person is
-TO_REDACT = {"gps", "state", "region", "zone_name", "location", "latitude", "longitude"}
+# Anything that pinpoints where a person is, including errors/URLs with query params
+TO_REDACT = {"gps", "state", "region", "zone_name", "location", "latitude", "longitude", "error", "url"}
 
 
 async def async_get_config_entry_diagnostics(

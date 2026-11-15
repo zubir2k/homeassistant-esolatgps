@@ -276,6 +276,23 @@ async def test_aladhan_failure_keeps_place_without_times(hass: HomeAssistant, mo
     assert "Aladhan returned 400" in result["attributes"]["error"]
 
 
+async def test_aladhan_failure_sanitizes_query_url(hass: HomeAssistant, mock_http) -> None:
+    mock_http.get(NOMINATIM, json=load_json("nominatim_sg.json"))
+    mock_http.get(
+        ALADHAN_RE,
+        exc=aiohttp.ClientError(
+            "Cannot connect URL: https://api.aladhan.com/v1/timings/28-10-2026?latitude=1.3521&longitude=103.8198"
+        ),
+    )
+    result = await _fetch(hass, _coordinator(hass), SG)
+    assert result["state"] == "Bishan, Singapore, SG"
+    assert "subuh" not in result["attributes"]
+    err = result["attributes"]["error"]
+    assert "1.3521" not in err
+    assert "103.8198" not in err
+    assert "https://api.aladhan.com/v1/timings/28-10-2026" in err
+
+
 # --- Hijri ---------------------------------------------------------------------------------
 
 async def test_hijri_date(hass: HomeAssistant, mock_http) -> None:
@@ -316,8 +333,10 @@ async def test_update_covers_people_and_home_and_caches_hijri(hass: HomeAssistan
 async def test_update_fails_when_nothing_resolves(hass: HomeAssistant, mock_http) -> None:
     hass.states.async_set("zone.home", "0", {"latitude": KJ[0], "longitude": KJ[1]})
     mock_http.get(KJ_URL, exc=aiohttp.ClientError())
-    with pytest.raises(UpdateFailed):
+    with pytest.raises(UpdateFailed) as exc_info:
         await _coordinator(hass)._async_update_data()
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == "no_prayer_times"
 
 
 # --- Reverse geocoding ---------------------------------------------------------------------

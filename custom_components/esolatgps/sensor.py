@@ -94,7 +94,9 @@ class EsolatGPSSensor(EsolatGPSEntity, SensorEntity):
 
         entity_name = entity_id.split('.')[1]
 
-        # Kept from earlier versions so existing entities, history and dashboards carry over
+        # Explicit entity_id is retained for backward compatibility with the bundled
+        # Lovelace card (esolatgps-card.js), automations, and dashboards, while keeping
+        # _attr_has_entity_name = True on EsolatGPSEntity.
         self._attr_unique_id = f"esolat_{entity_name}"
         self.entity_id = f"sensor.esolat_{entity_name}"
 

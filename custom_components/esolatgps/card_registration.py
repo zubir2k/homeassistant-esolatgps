@@ -36,6 +36,7 @@ CARD_URL = f"{CARD_URL_BASE}/{CARD_FILENAME}"
 
 _URL_KEY = f"{DOMAIN}_card_url"
 _INJECTED_KEY = f"{DOMAIN}_card_injected"
+_REGISTERED_KEY = f"{DOMAIN}_card_registered"
 _LOCK_KEY = f"{DOMAIN}_card_lock"
 _LOVELACE_KEY = "lovelace"
 
@@ -98,7 +99,8 @@ async def async_register_card(hass: HomeAssistant) -> None:
     removes it and adding the integration back (without a restart) must restore it.
     """
     card_path = Path(__file__).parent / "frontend" / CARD_FILENAME
-    if not card_path.is_file():
+    is_file = await hass.async_add_executor_job(card_path.is_file)
+    if not is_file:
         _LOGGER.warning("eSolat GPS card not found at %s", card_path)
         return
 
@@ -120,6 +122,7 @@ async def async_register_card(hass: HomeAssistant) -> None:
                 if await _async_ensure_loaded(resources):
                     await _async_sync_resource(resources, url)
                     _LOGGER.debug("eSolat GPS card registered as Lovelace resource %s", url)
+                    hass.data[_REGISTERED_KEY] = True
                     return
                 _LOGGER.debug("Lovelace resources not loaded; injecting the card script instead")
             except Exception:  # noqa: BLE001
@@ -135,10 +138,12 @@ async def async_register_card(hass: HomeAssistant) -> None:
             hass.data[_INJECTED_KEY] = True
             add_extra_js_url(hass, url)
             _LOGGER.debug("eSolat GPS card injected via add_extra_js_url: %s", url)
+        hass.data[_REGISTERED_KEY] = True
 
 
 async def async_unregister_card(hass: HomeAssistant) -> None:
     """Remove our Lovelace resource (called when the integration is removed)."""
+    hass.data.pop(_REGISTERED_KEY, None)
     mode, resources = _lovelace_resources(hass)
     if mode != "storage" or resources is None:
         return

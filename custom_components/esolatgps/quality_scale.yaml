@@ -70,17 +70,13 @@ rules:
   dynamic-devices:
     status: exempt
     comment: One service device per entry.
-  entity-category:
-    status: exempt
-    comment: All entities are primary.
-  entity-device-class:
-    status: exempt
-    comment: The state is a place name; no sensor device class fits.
+  entity-category: done
+  entity-device-class: done
   entity-disabled-by-default:
     status: exempt
     comment: Every entity is a core part of the integration.
   entity-translations: done
-  exception-translations: todo
+  exception-translations: done
   icon-translations: done
   reconfiguration-flow:
     status: exempt

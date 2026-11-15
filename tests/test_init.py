@@ -103,12 +103,26 @@ async def test_one_failed_location_is_unavailable(hass: HomeAssistant) -> None:
 
 
 async def test_diagnostics_redacts_location(hass: HomeAssistant) -> None:
-    entry = await _setup(hass, GOOD)
+    data_with_error = {
+        **GOOD,
+        "attributes": {
+            **GOOD["attributes"],
+            "latitude": 3.02,
+            "longitude": 101.79,
+            "error": "Failed to connect",
+            "url": "https://api.aladhan.com",
+        },
+    }
+    entry = await _setup(hass, data_with_error)
     diag = await async_get_config_entry_diagnostics(hass, entry)
     home = diag["locations"]["zone.home"]
     assert home["state"] == "**REDACTED**"
     assert home["attributes"]["gps"] == "**REDACTED**"
     assert home["attributes"]["zone"] == "SGR01"
+    assert home["attributes"]["latitude"] == "**REDACTED**"
+    assert home["attributes"]["longitude"] == "**REDACTED**"
+    assert home["attributes"]["error"] == "**REDACTED**"
+    assert home["attributes"]["url"] == "**REDACTED**"
 
 
 async def test_options_change_reloads(hass: HomeAssistant) -> None:
