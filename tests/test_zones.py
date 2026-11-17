@@ -12,7 +12,7 @@ def index() -> ZoneIndex:
 @pytest.mark.parametrize(
     ("lat", "lon", "zone"),
     [
-        (3.0218853, 101.7915175, "SGR01"),  # Kajang
+        (2.9930, 101.7910, "SGR01"),  # Kajang
         (3.1390, 101.6869, "WLY01"),        # Kuala Lumpur
         (5.4164, 100.3327, "PNG01"),        # George Town
         (1.4927, 103.7414, "JHR02"),        # Johor Bahru
@@ -28,7 +28,7 @@ def test_known_places(index: ZoneIndex, lat, lon, zone) -> None:
 
 
 def test_zone_names_are_bundled(index: ZoneIndex) -> None:
-    m = index.lookup(3.0218853, 101.7915175)
+    m = index.lookup(2.9930, 101.7910)
     assert m.negeri == "Selangor"
     assert m.daerah.startswith("Gombak")
     assert len(index.zones) == 60

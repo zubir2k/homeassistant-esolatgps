@@ -23,7 +23,7 @@ from custom_components.esolatgps.coordinator import EsolatGPSCoordinator
 
 from .conftest import load_json
 
-KJ = (3.0218853, 101.7915175)
+KJ = (2.993, 101.791)
 SG = (1.3521, 103.8198)
 KJ_URL = WAKTUSOLAT_ZONE_URL.format(zone="SGR01")
 NOMINATIM = "https://nominatim.openstreetmap.org/reverse"
@@ -118,7 +118,7 @@ async def test_month_is_fetched_once_per_zone(hass: HomeAssistant, mock_http) ->
     _mock_malaysia(mock_http)
     coord = _coordinator(hass)
     await _fetch(hass, coord, KJ)
-    await _fetch(hass, coord, (2.9935, 101.7874), "person.a")   # Saujana Impian, also SGR01
+    await _fetch(hass, coord, (2.995, 101.785), "person.a")   # Saujana Impian, also SGR01
     await _fetch(hass, coord, (3.0738, 101.5183), "person.b")   # Shah Alam, SGR01
     zone_calls = [c for c in mock_http.mock_calls if "waktusolat" in str(c[1])]
     assert len(zone_calls) == 1

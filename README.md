@@ -98,7 +98,7 @@ Both are asked for during setup. Open **Settings → Devices & Services → eSol
 | `provider` | `JAKIM (waktusolat.app)` / `Aladhan` | |
 | `method` | `Majlis Ugama Islam Singapura, Singapore` | Calculation authority (outside Malaysia only) |
 | `timezone` | `Asia/Kuala_Lumpur` | Local timezone of the location |
-| `gps` | `2.99,101.78` | |
+| `gps` | `<latitude>,<longitude>` | |
 
 Prayer times: `imsak`, `subuh`, `syuruk`, `isyraq`, `dhuha`, `zohor`, `asar`, `maghrib`, `isyak`, each in three formats:
 - Datetime UTC (e.g. `2026-10-21T21:49:00+00:00`)

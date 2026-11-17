@@ -16,7 +16,7 @@ HIJRI = "custom_components.esolatgps.coordinator.EsolatGPSCoordinator.fetch_hijr
 GOOD = {
     "state": "Saujana Impian, Hulu Langat",
     "attributes": {
-        "gps": "3.0218853,101.7915175",
+        "gps": "2.993,101.791",
         "flag": "local",
         "zone": "SGR01",
         "zone_name": "Gombak, Petaling, Sepang, Hulu Langat, Hulu Selangor, S.Alam",
