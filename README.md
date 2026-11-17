@@ -36,11 +36,11 @@ This is a continuation of [HomeAssistantEsolatGPS](https://github.com/zubir2k/Ho
 - Person entity with GPS location (device tracker, e.g. the Companion app)
 
 ## Installation
-#### With HACS
+#### With Marketplace/HACS
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=zubir2k&repository=homeassistant-esolatgps&category=integration)
 
 > [!Tip]
-> If you are unable to use the button above, manually search for eSolat GPS in HACS.
+> If you are unable to use the button above, manually search for eSolat GPS in Marketplace/HACS.
 
 #### Manual
 1. Copy the `esolatgps` directory from `custom_components` in this repository and place inside your Home Assistant's `custom_components` directory.
