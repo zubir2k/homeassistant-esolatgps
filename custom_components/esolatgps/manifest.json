@@ -20,5 +20,5 @@
   "issue_tracker": "https://github.com/zubir2k/homeassistant-esolatgps/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.4.3"
+  "version": "0.4.4"
 }
