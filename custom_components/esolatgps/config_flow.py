@@ -8,13 +8,9 @@ import aiohttp
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
-from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
-    NumberSelector,
-    NumberSelectorConfig,
-    NumberSelectorMode,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
@@ -23,24 +19,11 @@ from homeassistant.helpers.selector import (
 from .const import (
     ALADHAN_METHODS,
     CONF_ALADHAN_METHOD,
-    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    MAX_SCAN_INTERVAL,
-    MIN_SCAN_INTERVAL,
     WAKTUSOLAT_ZONES_URL,
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-INTERVAL_SELECTOR = NumberSelector(
-    NumberSelectorConfig(
-        min=MIN_SCAN_INTERVAL,
-        max=MAX_SCAN_INTERVAL,
-        step=1,
-        mode=NumberSelectorMode.BOX,
-        unit_of_measurement="min",
-    )
-)
 
 METHOD_SELECTOR = SelectSelector(
     SelectSelectorConfig(
@@ -75,6 +58,9 @@ class EsolatGPSConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the initial step. A second entry is blocked by single_config_entry."""
+        await self.async_set_unique_id(DOMAIN)
+        self._abort_if_unique_id_configured()
+
         errors: dict[str, str] = {}
         if user_input is not None:
             if await _async_can_reach_provider(self.hass):
@@ -82,7 +68,6 @@ class EsolatGPSConfigFlow(ConfigFlow, domain=DOMAIN):
                     title="eSolat GPS",
                     data={},
                     options={
-                        CONF_SCAN_INTERVAL: int(user_input[CONF_SCAN_INTERVAL]),
                         CONF_ALADHAN_METHOD: _valid_method(
                             user_input.get(CONF_ALADHAN_METHOD, "auto")
                         ),
@@ -95,10 +80,6 @@ class EsolatGPSConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_SCAN_INTERVAL,
-                        default=(user_input or {}).get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
-                    ): INTERVAL_SELECTOR,
-                    vol.Required(
                         CONF_ALADHAN_METHOD,
                         default=(user_input or {}).get(CONF_ALADHAN_METHOD, "auto"),
                     ): METHOD_SELECTOR,
@@ -110,23 +91,18 @@ class EsolatGPSConfigFlow(ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
-        """Options: update interval and the calculation method used outside Malaysia."""
+        """Options: calculation method used outside Malaysia."""
         return EsolatGPSOptionsFlow()
 
 
 class EsolatGPSOptionsFlow(OptionsFlow):
-    """Change the update interval and the Aladhan method without re-adding the integration."""
+    """Change the Aladhan method without re-adding the integration."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
-            user_input[CONF_SCAN_INTERVAL] = int(user_input[CONF_SCAN_INTERVAL])
             return self.async_create_entry(data=user_input)
 
         entry = self.config_entry
-        # Entries made before 0.4.0 keep the interval in data
-        interval = entry.options.get(
-            CONF_SCAN_INTERVAL, entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-        )
         method = _valid_method(
             entry.options.get(CONF_ALADHAN_METHOD, entry.data.get(CONF_ALADHAN_METHOD, "auto"))
         )
@@ -135,7 +111,6 @@ class EsolatGPSOptionsFlow(OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_SCAN_INTERVAL, default=interval): INTERVAL_SELECTOR,
                     vol.Required(CONF_ALADHAN_METHOD, default=method): METHOD_SELECTOR,
                 }
             ),

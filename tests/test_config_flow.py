@@ -2,7 +2,6 @@
 from unittest.mock import patch
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -22,12 +21,12 @@ async def test_user_flow_creates_entry(hass: HomeAssistant) -> None:
 
     with patch(REACH, return_value=True), patch(SETUP, return_value=True):
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {CONF_SCAN_INTERVAL: 20, CONF_ALADHAN_METHOD: "11"}
+            result["flow_id"], {CONF_ALADHAN_METHOD: "11"}
         )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "eSolat GPS"
     assert result["data"] == {}
-    assert result["options"] == {CONF_SCAN_INTERVAL: 20, CONF_ALADHAN_METHOD: "11"}
+    assert result["options"] == {CONF_ALADHAN_METHOD: "11"}
 
 
 async def test_setup_form_offers_method_without_jakim(hass: HomeAssistant) -> None:
@@ -48,14 +47,14 @@ async def test_user_flow_recovers_from_cannot_connect(hass: HomeAssistant) -> No
     )
     with patch(REACH, return_value=False):
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {CONF_SCAN_INTERVAL: 15}
+            result["flow_id"], {CONF_ALADHAN_METHOD: "auto"}
         )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "cannot_connect"}
 
     with patch(REACH, return_value=True), patch(SETUP, return_value=True):
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {CONF_SCAN_INTERVAL: 15}
+            result["flow_id"], {CONF_ALADHAN_METHOD: "auto"}
         )
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
@@ -70,22 +69,20 @@ async def test_single_instance(hass: HomeAssistant) -> None:
 
 
 async def test_options_flow(hass: HomeAssistant) -> None:
-    # An entry made before 0.4.0 keeps the interval in data
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_SCAN_INTERVAL: 30})
+    entry = MockConfigEntry(domain=DOMAIN, data={})
     entry.add_to_hass(hass)
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.FORM
     schema = {str(k): k.default() for k in result["data_schema"].schema}
-    assert schema[CONF_SCAN_INTERVAL] == 30
     assert schema[CONF_ALADHAN_METHOD] == "auto"
 
     with patch(SETUP, return_value=True):
         result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SCAN_INTERVAL: 10, CONF_ALADHAN_METHOD: "11"}
+            result["flow_id"], {CONF_ALADHAN_METHOD: "11"}
         )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_SCAN_INTERVAL: 10, CONF_ALADHAN_METHOD: "11"}
+    assert entry.options == {CONF_ALADHAN_METHOD: "11"}
 
 
 async def test_options_flow_drops_legacy_jakim_method(hass: HomeAssistant) -> None:

@@ -5,7 +5,7 @@ rules:
     comment: The integration registers no actions.
   appropriate-polling:
     status: done
-    comment: User-set interval, 5 to 60 minutes (default 15), because people move around during the day.
+    comment: Uses an appropriate fixed polling interval of 15 minutes, balancing location freshness with upstream rate limits.
   brands: done
   common-modules: done
   config-flow: done
