@@ -9,10 +9,10 @@
 
 Assalamu'alaikum
 
-This is a custom integration for Home Assistant that creates a Prayer Time sensor for each Person based on their GPS coordinates, plus one for your Home zone.
+This is a global custom integration for Home Assistant that creates dynamic Prayer Time sensors for every Person and your Home zone based on real-time GPS coordinates.
 
-- **In Malaysia:** official JAKIM times via **[waktusolat.app](https://api.waktusolat.app/)**
-- **Outside Malaysia:** times from **[Aladhan](https://aladhan.com/prayer-times-api)**, using the nearest local authority (e.g. MUIS in Singapore, Umm Al-Qura in Makkah)
+- **In Malaysia:** Pinpoint district & zone accuracy from official JAKIM timetables via **[waktusolat.app](https://api.waktusolat.app/)** (resolved offline from bundled GIS zone boundary maps).
+- **Worldwide / Travel:** Seamless automatic fallback to **[Aladhan](https://aladhan.com/prayer-times-api)** when traveling abroad or residing outside Malaysia, with configurable calculation methods (Umm Al-Qura, MWL, ISNA, Egypt, etc.).
 
 It also ships with the **eSolat GPS Card**, a dashboard card that's installed automatically with the integration.
 

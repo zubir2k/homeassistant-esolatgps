@@ -1,7 +1,6 @@
 {
   "name": "eSolat GPS",
   "homeassistant": "2025.1.0",
-  "country": "MY",
   "zip_release": true,
   "filename": "esolatgps.zip"
 }
