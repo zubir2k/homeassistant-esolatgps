@@ -1,4 +1,4 @@
-![esolatgps_banner](/custom_components/esolatgps/brand/logo.png)
+<img src="/custom_components/esolatgps/brand/logo.png" width="50%">
 
 ![GitHub Repo stars](https://img.shields.io/github/stars/zubir2k/homeassistant-esolatgps?style=social)
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/default)
