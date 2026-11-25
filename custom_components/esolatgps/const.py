@@ -1,8 +1,12 @@
-"""
-Constants for the EsolatGPS integration.
-"""
+"""Constants for the EsolatGPS integration."""
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+
+from esolat import (
+    ALADHAN_METHODS as ESOLAT_ALADHAN_METHODS,
+    API_ENDPOINTS,
+    ISYRAQ_OFFSET_MINUTES,
+)
 
 DOMAIN = "esolatgps"
 
@@ -20,7 +24,7 @@ PRAYER_NAMES = ["Subuh", "Syuruk", "Zohor", "Asar", "Maghrib", "Isyak"]
 
 # Malaysia provider: JAKIM times via waktusolat.app, one month per zone.
 # The GPS -> zone step is done offline from data/jakim_zones.json (see zones.py).
-WAKTUSOLAT_ZONE_URL = "https://api.waktusolat.app/v2/solat/{zone}"
+WAKTUSOLAT_ZONE_URL = API_ENDPOINTS["waktu_solat_zone"] + "/{zone}"
 # Only used by the config flow to check the provider is reachable
 WAKTUSOLAT_ZONES_URL = "https://api.waktusolat.app/zones"
 
@@ -37,17 +41,17 @@ WAKTUSOLAT_FIELDS = {
 }
 
 # Derived times, minutes after Syuruk
-ISYRAQ_OFFSET_MINUTES = 12  # not published by JAKIM; calculated
+# ISYRAQ_OFFSET_MINUTES is sourced from esolat (12m)
 DHUHA_OFFSET_MINUTES = 25   # JAKIM's Dhuha; used for Aladhan and if the API omits it
 
 # Fallback provider for locations outside Malaysia
-ALADHAN_URL = "https://api.aladhan.com/v1/timings"
+ALADHAN_URL = API_ENDPOINTS["aladhan_timings"]
 # Optional config key: Aladhan calculation method id, or "auto" for nearest authority
 CONF_ALADHAN_METHOD = "aladhan_method"
 # Aladhan method ids offered in the options flow (labels live in translations)
 # Method 17 (JAKIM) is left out on purpose: inside Malaysia times always come from JAKIM via
 # waktusolat.app, so the Aladhan method only ever applies outside Malaysia.
-ALADHAN_METHODS = ["auto", "0", "1", "2", "3", "4", "5", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "18", "19", "20", "21", "22", "23"]
+ALADHAN_METHODS = ["auto", *(m for m in ESOLAT_ALADHAN_METHODS if m != "17")]
 # Nominatim requires an identifying User-Agent
 NOMINATIM_UA = "homeassistant-esolatgps (+https://github.com/zubir2k/homeassistant-esolatgps)"
 
