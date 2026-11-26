@@ -50,8 +50,8 @@ def _mock_malaysia(mock_http, gps=None):
 
 
 def _mock_singapore(mock_http):
-    mock_http.get(NOMINATIM, json=load_json("nominatim_sg.json"))
-    mock_http.get(ALADHAN_RE, json=load_json("aladhan_sg.json"))
+    mock_http.get(NOMINATIM, json=load_json("nominatim_sg.json"), repeat=True)
+    mock_http.get(ALADHAN_RE, json=load_json("aladhan_sg.json"), repeat=True)
 
 
 async def _fetch(hass, coord, latlon, entity_id="zone.home"):
