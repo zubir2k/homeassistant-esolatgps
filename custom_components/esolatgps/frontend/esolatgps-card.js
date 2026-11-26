@@ -104,7 +104,7 @@ const DEFAULT_SLIDES = [
    shadow root, so the rule goes into the page once. The integration serves frontend/ at
    /esolatgps_static; the browser only downloads the font when Arabic text actually uses it,
    and falls back to the system Arabic fonts if it is missing (e.g. a manual /local install). */
-const FONT_URL = "/esolatgps_static/fonts/Amiri-Regular.woff2";
+const FONT_URL = new URL("./fonts/Amiri-Regular.woff2", import.meta.url).href;
 const ensureArabicFont = () => {
   if (document.getElementById("esolatgps-fonts")) return;
   const st = document.createElement("style");
