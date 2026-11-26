@@ -5,7 +5,7 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.esolatgps.coordinator import STORAGE_KEY
 
-from .test_coordinator import KJ, SG, frozen  # noqa: F401
+from .test_coordinator import KJ, SG, _mock_singapore, frozen  # noqa: F401
 from .test_diagnostic_sensors import _move, _setup
 
 
@@ -59,6 +59,7 @@ async def test_unused_entries_are_cleared_from_disk(hass: HomeAssistant, mock_ht
     assert hass_storage[STORAGE_KEY]["data"]["aladhan"] == []
     assert list(hass_storage[STORAGE_KEY]["data"]["jakim"]) == ["SGR01"]
     # Everyone leaves Malaysia: SGR01 goes from disk too
+    _mock_singapore(mock_http)
     hass.states.async_set("zone.home", "0", {"latitude": SG[0], "longitude": SG[1]})
     await _move(hass, frozen, "person.zubir", SG)
     assert hass_storage[STORAGE_KEY]["data"]["jakim"] == {}

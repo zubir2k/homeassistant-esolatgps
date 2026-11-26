@@ -68,6 +68,7 @@ async def test_unused_sources_are_removed_with_their_cache(hass: HomeAssistant, 
     assert hass.states.get("sensor.esolat_sgr01").attributes["locations"] == ["person.zubir", "zone.home"]
 
     # Everyone leaves Malaysia: SGR01 sensor and its cached month go, Aladhan comes back
+    _mock_singapore(mock_http)
     hass.states.async_set("zone.home", "0", {"latitude": SG[0], "longitude": SG[1]})
     await _move(hass, frozen, "person.zubir", SG)
     assert ent_reg.async_get("sensor.esolat_sgr01") is None
