@@ -31,6 +31,7 @@ async def _move(hass, freezer, entity_id, latlon):
     hass.states.async_set(entity_id, "x", {"latitude": latlon[0], "longitude": latlon[1]})
     freezer.tick(timedelta(minutes=6))
     async_fire_time_changed(hass)
+    await hass.config_entries.async_entries(DOMAIN)[0].runtime_data.async_refresh()
     await hass.async_block_till_done()
 
 
