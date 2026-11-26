@@ -3,8 +3,8 @@ EsolatGPS Integration for Home Assistant
 """
 import logging
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import EntityCategory
 from homeassistant.helpers import entity_registry as er
@@ -143,7 +143,7 @@ class EsolatNowSensor(EsolatGPSEntity, SensorEntity):
 
     def get_current_prayer_info(self, entity_data):
         """Get current prayer information based on time."""
-        now = datetime.now(ZoneInfo("UTC"))
+        now = dt_util.utcnow()
         prayer_times = {
             "imsak":   ("Imsak",   "Subuh"),
             "subuh":   ("Subuh",   "Syuruk"),

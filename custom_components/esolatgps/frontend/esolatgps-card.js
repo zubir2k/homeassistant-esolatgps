@@ -9,7 +9,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "0.2.7";
+const CARD_VERSION = "0.4.7";
 const TZ = "Asia/Kuala_Lumpur";
 
 const PRAYERS = [

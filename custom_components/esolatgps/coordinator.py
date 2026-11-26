@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 from .const import (
     DOMAIN,
     DEFAULT_SCAN_INTERVAL,
@@ -273,7 +274,7 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
                 raise _HttpError(response.status, await response.text())
             data = await response.json()
         self._months[zone] = data
-        self._fetched[zone] = datetime.now(ZoneInfo("UTC"))
+        self._fetched[zone] = dt_util.utcnow()
         self._dirty = True
         return data
 
@@ -313,7 +314,7 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
             prayer_times = {}
 
             def put(key, ts):
-                utc = datetime.fromtimestamp(ts, ZoneInfo("UTC"))
+                utc = datetime.fromtimestamp(ts, dt_util.UTC)
                 prayer_times[key] = utc.isoformat()
                 prayer_times[f"{key}_12h"] = self.convert_to_local_12time(ts)
                 prayer_times[f"{key}_24h"] = self.convert_to_local_24time(ts)
@@ -426,23 +427,28 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
         cache_key = (round(float(latitude), 2), round(float(longitude), 2), params.get("method"))
         cached = self._aladhan_cache.get(cache_key)
         try:
-            if cached and datetime.now(ZoneInfo(cached[1]["meta"]["timezone"])).strftime("%d-%m-%Y") == cached[0]:
+            cached_tz = (
+                await dt_util.async_get_time_zone(cached[1]["meta"]["timezone"])
+                if cached
+                else None
+            )
+            if cached and cached_tz and datetime.now(cached_tz).strftime("%d-%m-%Y") == cached[0]:
                 data = cached[1]
                 self._aladhan_used.add(cache_key)
                 tz_name = data["meta"]["timezone"]
-                tz = ZoneInfo(tz_name)
+                tz = cached_tz
             else:
                 # Ask for "today" in UTC first, then re-ask with the location's local date
-                today_utc = datetime.now(ZoneInfo("UTC")).strftime("%d-%m-%Y")
+                today_utc = dt_util.utcnow().strftime("%d-%m-%Y")
                 data = await self._aladhan_get(session, today_utc, params)
                 tz_name = data["meta"]["timezone"]
-                tz = ZoneInfo(tz_name)
+                tz = await dt_util.async_get_time_zone(tz_name) or dt_util.UTC
                 local_today = datetime.now(tz).strftime("%d-%m-%Y")
                 if local_today != today_utc:
                     data = await self._aladhan_get(session, local_today, params)
                 if len(self._aladhan_cache) > 64:
                     self._aladhan_cache.clear()
-                self._aladhan_cache[cache_key] = (local_today, data, datetime.now(ZoneInfo("UTC")))
+                self._aladhan_cache[cache_key] = (local_today, data, dt_util.utcnow())
                 self._dirty = True
                 self._aladhan_used.add(cache_key)
         except Exception as e:  # noqa: BLE001
@@ -476,7 +482,7 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
 
         prayer_times = {}
         for key, dt in local.items():
-            prayer_times[key] = dt.astimezone(ZoneInfo("UTC")).isoformat()
+            prayer_times[key] = dt.astimezone(dt_util.UTC).isoformat()
             prayer_times[f"{key}_12h"] = dt.strftime("%I:%M %p").lstrip("0")
             prayer_times[f"{key}_24h"] = dt.strftime("%H:%M:%S")
 
@@ -506,12 +512,12 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
 
     @staticmethod
     def convert_to_local_12time(time):
-        dt = datetime.fromtimestamp(time, ZoneInfo("Asia/Kuala_Lumpur"))
+        dt = datetime.fromtimestamp(time, MYT)
         return dt.strftime("%I:%M %p").lstrip("0")
 
     @staticmethod
     def convert_to_local_24time(time):
-        dt = datetime.fromtimestamp(time, ZoneInfo("Asia/Kuala_Lumpur"))
+        dt = datetime.fromtimestamp(time, MYT)
         return dt.strftime("%H:%M:%S")
 
 
