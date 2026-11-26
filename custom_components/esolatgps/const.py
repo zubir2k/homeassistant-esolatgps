@@ -1,9 +1,11 @@
 """Constants for the EsolatGPS integration."""
+from homeassistant.const import CONF_SCAN_INTERVAL as CONF_SCAN_INTERVAL
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 
 from esolat import (
     ALADHAN_METHODS as ESOLAT_ALADHAN_METHODS,
     API_ENDPOINTS,
+    ISYRAQ_OFFSET_MINUTES as ISYRAQ_OFFSET_MINUTES,
 )
 
 DOMAIN = "esolatgps"
