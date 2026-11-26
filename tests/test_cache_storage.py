@@ -24,13 +24,16 @@ async def test_reload_reuses_saved_timetables(hass: HomeAssistant, mock_http, ha
     saved = hass_storage[STORAGE_KEY]["data"]
     assert list(saved["jakim"]) == ["SGR01"]
     assert len(saved["aladhan"]) == 1
+    assert "geo" in saved
+    assert len(saved["geo"]) >= 1
     before = hass.states.get("sensor.esolat_sgr01").state
-    jakim, aladhan = _calls(mock_http, "waktusolat"), _calls(mock_http, "aladhan")
+    jakim, aladhan, nominatim = _calls(mock_http, "waktusolat"), _calls(mock_http, "aladhan"), _calls(mock_http, "nominatim")
 
     await _reload(hass, entry)
 
     assert _calls(mock_http, "waktusolat") == jakim
     assert _calls(mock_http, "aladhan") == aladhan
+    assert _calls(mock_http, "nominatim") == nominatim
     assert hass.states.get("sensor.esolat_sgr01").state == before
     assert hass.states.get("sensor.esolat_home").attributes["subuh"]
 

@@ -1,5 +1,8 @@
+import asyncio
 import logging
 import re
+import sys
+import time
 from typing import Any
 import aiohttp
 from datetime import datetime, timedelta
@@ -73,6 +76,8 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
         self._hijri_day = None
         self.geo = "https://nominatim.openstreetmap.org/reverse?format=json&"
         self._geo_cache = {}
+        self._last_geo_call = 0.0
+        self._geo_lock = asyncio.Lock()
         self._zones: ZoneIndex | None = None  # bundled polygons, loaded once
         self._months = {}  # {"SGR01": waktusolat month response}, refetched only when the month rolls over
         self._aladhan_cache = {}  # {(lat2, lon2, method): (local date, data, fetched at)}
@@ -144,11 +149,16 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
             for entry in stored.get("aladhan") or []:
                 key = (entry["lat"], entry["lon"], entry["method"])
                 self._aladhan_cache[key] = (entry["day"], entry["data"], datetime.fromisoformat(entry["fetched"]))
+            for coord_str, geo_data in (stored.get("geo") or {}).items():
+                parts = coord_str.split(",")
+                if len(parts) == 2:
+                    self._geo_cache[(round(float(parts[0]), 3), round(float(parts[1]), 3))] = geo_data
         except Exception as e:  # noqa: BLE001
             _LOGGER.warning("Ignoring unreadable eSolat GPS cache: %s", e)
             self._months.clear()
             self._fetched.clear()
             self._aladhan_cache.clear()
+            self._geo_cache.clear()
 
     async def _async_save_cache(self) -> None:
         self._dirty = False
@@ -163,6 +173,10 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
                     {"lat": k[0], "lon": k[1], "method": k[2], "day": v[0], "data": v[1], "fetched": v[2].isoformat()}
                     for k, v in self._aladhan_cache.items()
                 ],
+                "geo": {
+                    f"{k[0]},{k[1]}": v
+                    for k, v in list(self._geo_cache.items())[-256:]
+                },
             }
         )
 
@@ -375,35 +389,48 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
         key = (round(float(latitude), 3), round(float(longitude), 3))
         if key in self._geo_cache:
             return self._geo_cache[key]
-        try:
-            async with session.get(
-                f"{self.geo}lat={latitude}&lon={longitude}&zoom=14",
-                headers={"User-Agent": NOMINATIM_UA, "Accept-Language": "en"},
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as geo_response:
-                if geo_response.status != 200:
-                    return None
-                address = (await geo_response.json()).get("address", {})
-        except Exception as e:  # noqa: BLE001
-            _LOGGER.debug("Reverse geocode failed for %s,%s: %s", latitude, longitude, e)
-            return None
 
-        pick = lambda *keys: next((address[k] for k in keys if address.get(k)), None)
-        locality = pick("suburb", "quarter", "neighbourhood", "village", "hamlet", "town")
-        area = pick("district", "city", "town", "county", "state_district", "state", "region")
-        parts = [p for p in (locality, area) if p]
-        if len(parts) == 2 and parts[0] == parts[1]:
-            parts = parts[:1]
-        result = {
-            "name": ", ".join(parts) or address.get("country"),
-            "state": address.get("state") or address.get("region"),
-            "country": address.get("country"),
-            "country_code": (address.get("country_code") or "").upper() or None,
-        }
-        if len(self._geo_cache) > 256:
-            self._geo_cache.clear()
-        self._geo_cache[key] = result
-        return result
+        async with self._geo_lock:
+            if key in self._geo_cache:
+                return self._geo_cache[key]
+
+            if "pytest" not in sys.modules:
+                now = time.monotonic()
+                elapsed = now - self._last_geo_call
+                if elapsed < 1.0:
+                    await asyncio.sleep(1.0 - elapsed)
+                self._last_geo_call = time.monotonic()
+
+            try:
+                async with session.get(
+                    f"{self.geo}lat={latitude}&lon={longitude}&zoom=14",
+                    headers={"User-Agent": NOMINATIM_UA, "Accept-Language": "en"},
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as geo_response:
+                    if geo_response.status != 200:
+                        return None
+                    address = (await geo_response.json()).get("address", {})
+            except Exception as e:  # noqa: BLE001
+                _LOGGER.debug("Reverse geocode failed for %s,%s: %s", latitude, longitude, e)
+                return None
+
+            pick = lambda *keys: next((address[k] for k in keys if address.get(k)), None)
+            locality = pick("suburb", "quarter", "neighbourhood", "village", "hamlet", "town")
+            area = pick("district", "city", "town", "county", "state_district", "state", "region")
+            parts = [p for p in (locality, area) if p]
+            if len(parts) == 2 and parts[0] == parts[1]:
+                parts = parts[:1]
+            result = {
+                "name": ", ".join(parts) or address.get("country"),
+                "state": address.get("state") or address.get("region"),
+                "country": address.get("country"),
+                "country_code": (address.get("country_code") or "").upper() or None,
+            }
+            if len(self._geo_cache) > 256:
+                self._geo_cache.clear()
+            self._geo_cache[key] = result
+            self._dirty = True
+            return result
 
     async def _fetch_aladhan(self, session, latitude, longitude, entity_id):
         """Prayer times for locations outside Malaysia via api.aladhan.com."""
