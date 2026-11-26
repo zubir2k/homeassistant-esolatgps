@@ -152,7 +152,7 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
             for coord_str, geo_data in (stored.get("geo") or {}).items():
                 parts = coord_str.split(",")
                 if len(parts) == 2:
-                    self._geo_cache[(round(float(parts[0]), 3), round(float(parts[1]), 3))] = geo_data
+                    self._geo_cache[(round(float(parts[0]), 2), round(float(parts[1]), 2))] = geo_data
         except Exception as e:  # noqa: BLE001
             _LOGGER.warning("Ignoring unreadable eSolat GPS cache: %s", e)
             self._months.clear()
@@ -382,11 +382,11 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
             return {"state": "unavailable", "attributes": {"location": "Unexpected error", "gps": gps}}
 
     async def _reverse_geocode(self, session, latitude, longitude):
-        """Best-effort place lookup from Nominatim, cached per ~100 m. Never raises.
+        """Best-effort place lookup from Nominatim, cached per ~1 km cell. Never raises.
 
         Returns {"name": "Bishan, Singapore", "state": ..., "country": ..., "country_code": "SG"} or None.
         """
-        key = (round(float(latitude), 3), round(float(longitude), 3))
+        key = (round(float(latitude), 2), round(float(longitude), 2))
         if key in self._geo_cache:
             return self._geo_cache[key]
 
@@ -403,9 +403,9 @@ class EsolatGPSCoordinator(DataUpdateCoordinator[dict]):
 
             try:
                 async with session.get(
-                    f"{self.geo}lat={latitude}&lon={longitude}&zoom=14",
+                    f"{self.geo}lat={key[0]}&lon={key[1]}&zoom=14",
                     headers={"User-Agent": NOMINATIM_UA, "Accept-Language": "en"},
-                    timeout=aiohttp.ClientTimeout(total=10),
+                    timeout=aiohttp.ClientTimeout(total=4),
                 ) as geo_response:
                     if geo_response.status != 200:
                         return None

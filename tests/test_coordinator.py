@@ -358,3 +358,19 @@ async def test_geocode_cache_is_bounded(hass: HomeAssistant, mock_http) -> None:
     mock_http.get(NOMINATIM, json=load_json("nominatim_kajang.json"))
     await coord._reverse_geocode(async_get_clientsession(hass), *KJ)
     assert len(coord._geo_cache) == 1
+
+
+async def test_geocode_multi_entity_shares_cache_in_same_cell(hass: HomeAssistant, mock_http) -> None:
+    coord = _coordinator(hass)
+    session = async_get_clientsession(hass)
+    mock_http.get(NOMINATIM, json=load_json("nominatim_kajang.json"))
+    # Three entities slightly drifting within the same ~1.1 km cell (e.g. household members at home)
+    r1 = await coord._reverse_geocode(session, 3.021, 101.791)
+    r2 = await coord._reverse_geocode(session, 3.024, 101.789)
+    r3 = await coord._reverse_geocode(session, 3.018, 101.794)
+    assert r1["name"] == "Saujana Impian, Hulu Langat"
+    assert r2["name"] == "Saujana Impian, Hulu Langat"
+    assert r3["name"] == "Saujana Impian, Hulu Langat"
+    # Only 1 Nominatim network call was made across all 3 queries!
+    nominatim_calls = [c for c in mock_http.mock_calls if "nominatim" in str(c[1])]
+    assert len(nominatim_calls) == 1
